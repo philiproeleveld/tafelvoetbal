@@ -1,0 +1,4 @@
+# Install with: pip install -r python_requirements.txt
+
+numpy>=1.16.2
+opencv-contrib-python>=4.0.0.21
