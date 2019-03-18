@@ -2,3 +2,4 @@
 
 numpy>=1.16.2
 opencv-contrib-python>=4.0.0.21
+scipy>=0.14.0
