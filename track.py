@@ -10,7 +10,6 @@ from argparse import ArgumentParser
 
 # Constants
 field_update_timer = 60
-color_detect_min = 150
 speedvect_scalar = 2
 team_black = 0
 team_white = 1
@@ -131,6 +130,8 @@ res = (frame.shape[1], frame.shape[0])
 scale = res[0] / 640
 draw_thickness = max(1, int(scale) - 1)
 ballradius = int(10 * scale)
+lower_pix_thresh = 100 * (scale / args.scaledown) ** 2
+upper_pix_thresh = 400 * (scale / args.scaledown) ** 2
 
 
 
@@ -195,7 +196,7 @@ while True:
         center_frame = mask_frame(sliced_frame, lower_blue, upper_blue)
         center_frame = cv2.split(center_frame)[2]
         coords = cv2.findNonZero(center_frame)
-        if np.size(coords) > color_detect_min * (scale / args.scaledown) ** 2:
+        if np.size(coords) > lower_pix_thresh:
             avg = np.mean(coords, (0, 1))
             avg += slice_offset
             avg *= args.scaledown
@@ -211,6 +212,7 @@ while True:
             lwidth = (rgoal[0] - lgoal[0]) // 2
             rwidth = (rgoal[0] - lgoal[0]) // 2
             regions = [lgoal[0] + (1 + 2*i) * lwidth // 7 for i in range(7)]
+            # An update is required asap
             field_update = 0
     # Recalculate after some amount of frames
     elif field_update == field_update_timer:
@@ -220,8 +222,10 @@ while True:
     ball_frame = mask_frame(scaled_frame, lower_yellow, upper_yellow)
     ball_frame = cv2.split(ball_frame)[2]
     coords = cv2.findNonZero(ball_frame)
+    # Accuracy of ball detection to be used in determining hit thresholds
+    accuracy = min(1, (np.size(coords) - lower_pix_thresh) / (upper_pix_thresh - lower_pix_thresh))
     # If enough pixels are found
-    if np.size(coords) > color_detect_min * (scale / args.scaledown) ** 2:
+    if accuracy > 0:
         avg = np.mean(coords, (0, 1)) * args.scaledown
         ballcenter = (int(avg[0]), int(avg[1]))
         # If the ball has not been seen before at all
@@ -233,9 +237,13 @@ while True:
             comparison_angle = 0
             angle_thresh = 90
         else:
-            # Calculate speed and angle based on last seen and current location
-            speed = np.linalg.norm(np.array(last_seen.pos) - np.array(ballcenter)) / (1 + hidden_timer)
-            angle = calc_angle(last_seen.pos, ballcenter)
+            # Predict the location based on last_seen
+            dx = hidden_timer * last_seen.speed * math.cos(math.radians(last_seen.angle))
+            dy = -hidden_timer * last_seen.speed * math.sin(math.radians(last_seen.angle))
+            prediction = (last_seen.pos[0] + dx, last_seen.pos[1] + dy)
+            # Note that prediction is equal to last_seen.pos if hidden_timer = 0
+            speed = np.linalg.norm(np.array(prediction) - np.array(ballcenter))
+            angle = calc_angle(prediction, ballcenter)
             # If the ball hasn't moved at all
             if angle is None:
                 # Set angle to last known angle instead
@@ -245,8 +253,8 @@ while True:
             # Compare speed only to the first previously known speed
             comparison_speed = last_seen.speed
             # Threshold for speed-based hit detection is depends on current speed
-            lower_speed_thresh = max(0, 0.5 * comparison_speed - 10)
-            upper_speed_thresh = 1.5 * comparison_speed + 10
+            lower_speed_thresh = max(0, 0.5 * comparison_speed * accuracy - 10)
+            upper_speed_thresh = 1.5 * comparison_speed / accuracy + 10
 
             # Compare angle to average of all previous angles up to the last hit
             angles = []
@@ -259,7 +267,7 @@ while True:
             else:
                 comparison_angle = last_seen.angle
             # Threshold for angle-based hit detection is determined by speed
-            angle_thresh = min(90, 450 / (speed ** 0.7 + 3))
+            angle_thresh = min(90, 450 / ((comparison_speed * accuracy) ** 0.7 + 3))
 
             # Remember what kind of hit was detected
             speed_hit = speed < lower_speed_thresh or speed > upper_speed_thresh
@@ -271,36 +279,31 @@ while True:
                     hits.append(hit(last_seen))
                 # Inside the field, determine which player it was
                 else:
-                    print(last_seen.pos[0], regions)
-                    for i in range(len(regions)):
-                        if last_seen.pos[0] < regions[i]:
-                            if i == 0:
-                                team = team_black
-                                player = keeper
-                            elif i == 1:
-                                team = team_black
-                                player = defense
-                            elif i == 2:
-                                team = team_white
-                                player = offense
-                            elif i == 3:
-                                team = team_black
-                                player = midfield
-                            elif i == 4:
-                                team = team_white
-                                player = midfield
-                            elif i == 5:
-                                team = team_black
-                                player = offense
-                            elif i == 6:
-                                team = team_white
-                                player = defense
-                            else:
-                                team = team_white
-                                player = keeper
-                            hits.append(hit(last_seen, team=team, player=player))
-                            break
-                    # TODO - determine which team hit the ball.
+                    if last_seen.pos[0] < regions[0]:
+                        team = team_black
+                        player = keeper
+                    elif last_seen.pos[0] < regions[1]:
+                        team = team_black
+                        player = defense
+                    elif last_seen.pos[0] < regions[2]:
+                        team = team_white
+                        player = offense
+                    elif last_seen.pos[0] < regions[3]:
+                        team = team_black
+                        player = midfield
+                    elif last_seen.pos[0] < regions[4]:
+                        team = team_white
+                        player = midfield
+                    elif last_seen.pos[0] < regions[5]:
+                        team = team_black
+                        player = offense
+                    elif last_seen.pos[0] < regions[6]:
+                        team = team_white
+                        player = defense
+                    else:
+                        team = team_white
+                        player = keeper
+                    hits.append(hit(last_seen, team=team, player=player))
                 hit_timer = 0
                 wait_time = args.wait_on_hits
             else:
@@ -309,6 +312,7 @@ while True:
         last_seen = datapoint(ballcenter, speed, angle)
         history.append(last_seen)
         hidden_timer = 0
+    # Couldn't find ball
     else:
         history.append(None)
         hidden_timer += 1
@@ -372,12 +376,9 @@ while True:
         # Score
         cv2.putText(frame, "Score: " + str(score[0]) + " - " + str(score[1]), (int(3 * scale), int(res[1] - 60 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
         # Speed and angle
-        if history[-1]:
-            cv2.putText(frame, "Speed: " + str(int(history[-1].speed)) + " pix/frame", (int(3 * scale), int(res[1] - 34 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
-            cv2.putText(frame, "Angle: " + str(int(history[-1].angle)) + " deg", (int(3 * scale), int(res[1] - 8 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
-        else:
-            cv2.putText(frame, "Speed: ??? pix/frame", (int(3 * scale), int(res[1] - 34 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
-            cv2.putText(frame, "Angle: ??? deg", (int(3 * scale), int(res[1] - 8 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
+        if last_seen:
+            cv2.putText(frame, "Speed: " + str(int(last_seen.speed)) + " pix/frame", (int(3 * scale), int(res[1] - 34 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
+            cv2.putText(frame, "Angle: " + str(int(last_seen.angle)) + " deg", (int(3 * scale), int(res[1] - 8 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
 
     # Fullscreen
     cv2.namedWindow("Tracking", cv2.WND_PROP_FULLSCREEN)
