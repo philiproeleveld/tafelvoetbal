@@ -38,10 +38,12 @@ upper_green  = (100, 255, 150)
 
 # Datapoint definition
 class datapoint:
-    def __init__(self, pos, speed, angle):
+    def __init__(self, pos, speed, angle, accuracy):
         self.pos = pos
         self.speed = speed
         self.angle = angle
+        self.accuracy = accuracy
+        self.hit = None
 
 # Hit definition
 class hit:
@@ -137,8 +139,7 @@ upper_pix_thresh = 400 * (scale / args.scaledown) ** 2
 
 # Variables
 score = [0, 0]
-history = [] # List of all datapoints (None value if ball was hidden)
-hits = [] # List of all detected hits
+history = [] # List of all datapoints (an entry is None if the ball was hidden)
 last_seen = None # Last location the ball was detected
 hidden_timer = 0 # Number of frames in a row where the ball is hidden
 hit_timer = 0 # Number of frames in a row since the last hit
@@ -232,10 +233,6 @@ while True:
         if not last_seen:
             speed = 0
             angle = 0
-            lower_speed_thresh = 0
-            upper_speed_thresh = 10
-            comparison_angle = 0
-            angle_thresh = 90
         else:
             # Predict the location based on last_seen
             dx = hidden_timer * last_seen.speed * math.cos(math.radians(last_seen.angle))
@@ -253,8 +250,7 @@ while True:
             # Compare speed only to the first previously known speed
             comparison_speed = last_seen.speed
             # Threshold for speed-based hit detection is depends on current speed
-            lower_speed_thresh = max(0, 0.5 * comparison_speed * accuracy - 10)
-            upper_speed_thresh = 1.5 * comparison_speed / accuracy + 10
+            speed_thresh = 100 / (1 +  10 * accuracy ** 2 / 2 ** (comparison_speed / 25))
 
             # Compare angle to average of all previous angles up to the last hit
             angles = []
@@ -269,15 +265,15 @@ while True:
             # Threshold for angle-based hit detection is determined by speed
             angle_thresh = min(90, 450 / ((comparison_speed * accuracy) ** 0.7 + 3))
 
-            # Remember what kind of hit was detected
-            speed_hit = speed < lower_speed_thresh or speed > upper_speed_thresh
+            # Detect a hit
+            speed_hit = abs(speed - comparison_speed) > speed_thresh
             angle_hit = (comparison_angle - angle) % 360 > angle_thresh and (angle - comparison_angle) % 360 > angle_thresh
 
             if speed_hit or angle_hit:
                 # Outside of green area, assume a side was hit
                 if Delaunay(hull).find_simplex(last_seen.pos) < 0:
-                    hits.append(hit(last_seen))
-                # Inside the field, determine which player it was
+                    new_hit = hit(last_seen)
+                # Inside the field, determine which (row of) player(s) it was
                 else:
                     if last_seen.pos[0] < regions[0]:
                         team = team_black
@@ -303,13 +299,14 @@ while True:
                     else:
                         team = team_white
                         player = keeper
-                    hits.append(hit(last_seen, team=team, player=player))
+                    new_hit = hit(last_seen, team=team, player=player)
+                history[-1 - hidden_timer].hit = new_hit
                 hit_timer = 0
                 wait_time = args.wait_on_hits
             else:
                 hit_timer += 1
 
-        last_seen = datapoint(ballcenter, speed, angle)
+        last_seen = datapoint(ballcenter, speed, angle, accuracy)
         history.append(last_seen)
         hidden_timer = 0
     # Couldn't find ball
@@ -325,14 +322,21 @@ while True:
         if (last_seen.pos[0] < lgoal[0] + fieldwidth // 14) and (last_seen.pos[1] > lgoal[1]) and (last_seen.pos[1] < lgoal[2]):
             score[1] += 1
 
+
+    #########################################################################
+    # End of functional code, the following is only for displaying purposes #
+    #########################################################################
+
+
+
     # Draw ball tracking
     if last_seen:
         if args.ball:
             cv2.circle(frame, last_seen.pos, ballradius, blue, draw_thickness)
         if args.hit_detection:
             # Draw area between the thresholds on frame
-            outerpts = cv2.ellipse2Poly(last_seen.pos, (int(speedvect_scalar * lower_speed_thresh), int(speedvect_scalar * lower_speed_thresh)), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
-            innerpts = cv2.ellipse2Poly(last_seen.pos, (int(speedvect_scalar * upper_speed_thresh), int(speedvect_scalar * upper_speed_thresh)), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
+            outerpts = cv2.ellipse2Poly(last_seen.pos, (int(speedvect_scalar * max(0, comparison_speed - speed_thresh)), int(speedvect_scalar * max(0, comparison_speed - speed_thresh))), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
+            innerpts = cv2.ellipse2Poly(last_seen.pos, (int(speedvect_scalar * (comparison_speed + speed_thresh)), int(speedvect_scalar * (comparison_speed + speed_thresh))), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
             pts = np.vstack((outerpts, innerpts[::-1]))
             cv2.fillPoly(frame, [pts], green)
             dx = int(speedvect_scalar * last_seen.speed * math.cos(math.radians(angle)))
@@ -344,19 +348,17 @@ while True:
     if args.history:
         for i in range(max(1, len(history) - 30), len(history)):
             if history[i]:
+                # Also draw hits where applicable
+                if args.hits and history[i].hit:
+                    temp = frame.copy()
+                    cv2.circle(temp, history[i].pos, ballradius // 2, history[i].hit.get_color(), -1)
+                    alpha = 0.5
+                    cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
                 j = i - 1
                 while j > 0 and not history[j]:
                     j -= 1
                 if history[j]:
                     cv2.line(frame, history[j].pos, history[i].pos, pink, draw_thickness)
-
-    # Draw recent hits
-    if args.hits:
-        for i in range(max(1, len(hits) - 5), len(hits)):
-            temp = frame.copy()
-            cv2.circle(temp, hits[i].dp.pos, ballradius // 2, hits[i].get_color(), -1)
-            alpha = 0.5
-            cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
 
     # Draw field hull and player regions
     if args.field:
@@ -410,13 +412,12 @@ if args.heatmap:
             temp = heatmap.copy()
             cv2.circle(temp, dp.pos, 20, color, -1)
             cv2.addWeighted(temp, alpha, heatmap, 1 - alpha, 0, heatmap)
-
-    # Draw all hit locations
-    if args.hits:
-        for hit in hits:
-            temp = heatmap.copy()
-            cv2.circle(temp, hit.dp.pos, ballradius // 2, hit.get_color(), -1)
-            cv2.addWeighted(temp, 0.5, heatmap, 0.5, 0, heatmap)
+            # Also draw hits
+            if args.hits and dp.hit:
+                temp = frame.copy()
+                cv2.circle(temp, dp.pos, ballradius // 2, dp.hit.get_color(), -1)
+                alpha = 0.5
+                cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
 
     # Fullscreen
     cv2.namedWindow("Heatmap", cv2.WND_PROP_FULLSCREEN)
