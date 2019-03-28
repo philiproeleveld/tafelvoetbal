@@ -47,8 +47,7 @@ class datapoint:
 
 # Hit definition
 class hit:
-    def __init__(self, dp, team=None, player=None):
-        self.dp = dp
+    def __init__(self, team=None, player=None):
         self.team = team
         self.player = player
 
@@ -145,10 +144,8 @@ hidden_timer = 0 # Number of frames in a row where the ball is hidden
 hit_timer = 0 # Number of frames in a row since the last hit
 field_update = 0 # Recalculate field dimensions when this reaches zero
 hull = None # Defines the green area of the field
-lgoal = None # Location of the left goal based on field hull
-rgoal = None # Location of the right goal based on field hull
-regions = None # Location of center field
-fieldwidth = None # Width of the field based on the two goals
+goals = None # Location of the two goals based on field hull
+regions = None # Regions around the player positions (e.g. keeper, midfield)
 framecopy = None # Image of the first frame to display static images
 
 
@@ -161,10 +158,11 @@ while True:
     ok, frame = vid.read()
     if not ok:
         break
-    scaled_frame = cv2.resize(frame, (res[0] // args.scaledown, res[1] // args.scaledown))
 
     if args.flip:
         frame = cv2.flip(frame, 1)
+
+    scaled_frame = cv2.resize(frame, (res[0] // args.scaledown, res[1] // args.scaledown))
 
     # Set framecopy to the first frame found
     if args.heatmap:
@@ -184,16 +182,16 @@ while True:
         leftmost = hull[:, 0].min()
         rightmost = hull[:, 0].max()
         fieldwidth = rightmost - leftmost
-        # Find goals based on field hull
-        lgoal = hull[hull[:, 0] < leftmost + fieldwidth // 30]
-        rgoal = hull[hull[:, 0] > rightmost - fieldwidth // 30]
-        # each goal is a tuple: (x, ytop, ybot)  where ytop and ybot are the
-        # vertical top and bottom of the goal and x is the horizontal location
-        lgoal = (leftmost, lgoal[:, 1].min(), lgoal[:, 1].max())
-        rgoal = (rightmost, rgoal[:, 1].min(), rgoal[:, 1].max())
-        # Find center field
-        slice_offset = ((leftmost + fieldwidth // 3) // args.scaledown, (lgoal[1] + rgoal[1]) // (2 * args.scaledown))
-        sliced_frame = scaled_frame[(lgoal[1] + rgoal[1]) // (2 * args.scaledown):(lgoal[2] + rgoal[2]) // (2 * args.scaledown), (leftmost + fieldwidth // 3) // args.scaledown:(leftmost + 2 * fieldwidth // 3) // args.scaledown, :]
+        topmost = hull[:, 1].min()
+        fieldheight = hull[:, 1].max() - topmost
+        # goals is a tuple: (xleft, xright, ytop, ybot) where xleft is the
+        # x-coord of the left goal, xright is the x-coord of the right goal,
+        # and ytop and ybot determine the vertical range of the two goals
+        goals = (leftmost, rightmost, topmost + fieldheight // 3, topmost + 2 * fieldheight // 3)
+        # Find center field when only looking at the middle part of the frame
+        # Center field and the goals are used to calculate player regions
+        slice_offset = ((leftmost + fieldwidth // 3) // args.scaledown, goals[2] // args.scaledown)
+        sliced_frame = scaled_frame[goals[2] // args.scaledown:goals[3] // args.scaledown, (leftmost + fieldwidth // 3) // args.scaledown:(leftmost + 2 * fieldwidth // 3) // args.scaledown, :]
         center_frame = mask_frame(sliced_frame, lower_blue, upper_blue)
         center_frame = cv2.split(center_frame)[2]
         coords = cv2.findNonZero(center_frame)
@@ -202,22 +200,27 @@ while True:
             avg += slice_offset
             avg *= args.scaledown
             fieldcenter = (int(avg[0]), int(avg[1]))
-            lwidth = fieldcenter[0] - lgoal[0]
-            rwidth = rgoal[0] - fieldcenter[0]
+            lwidth = fieldcenter[0] - goals[0]
+            rwidth = goals[1] - fieldcenter[0]
             regions = []
             for i in range(4):
-                regions.append(lgoal[0] + (1 + 2*i) * lwidth // 7)
+                regions.append(goals[0] + (1 + 2*i) * lwidth // 7)
             for i in range(1, 4):
                 regions.append(fieldcenter[0] + 2*i * rwidth // 7)
         else:
-            lwidth = (rgoal[0] - lgoal[0]) // 2
-            rwidth = (rgoal[0] - lgoal[0]) // 2
-            regions = [lgoal[0] + (1 + 2*i) * lwidth // 7 for i in range(7)]
+            regions = [goals[0] + (1 + 2*i) * fieldwidth // 14 for i in range(7)]
             # An update is required asap
             field_update = 0
     # Recalculate after some amount of frames
     elif field_update == field_update_timer:
         field_update = 0
+
+    # Declare some variables to draw hit detection later
+    if args.hit_detection:
+        comparison_speed = 0
+        speed_thresh = 0
+        comparison_angle = 0
+        angle_thresh = 0
 
     # Find ball based on color
     ball_frame = mask_frame(scaled_frame, lower_yellow, upper_yellow)
@@ -272,7 +275,7 @@ while True:
             if speed_hit or angle_hit:
                 # Outside of green area, assume a side was hit
                 if Delaunay(hull).find_simplex(last_seen.pos) < 0:
-                    new_hit = hit(last_seen)
+                    new_hit = hit()
                 # Inside the field, determine which (row of) player(s) it was
                 else:
                     if last_seen.pos[0] < regions[0]:
@@ -299,7 +302,7 @@ while True:
                     else:
                         team = team_white
                         player = keeper
-                    new_hit = hit(last_seen, team=team, player=player)
+                    new_hit = hit(team=team, player=player)
                 history[-1 - hidden_timer].hit = new_hit
                 hit_timer = 0
                 wait_time = args.wait_on_hits
@@ -317,10 +320,11 @@ while True:
     # Check for goals: if last known location was near a goal
     # and the ball has been gone for 10 frames then a goal was made
     if last_seen and hidden_timer == 10:
-        if (last_seen.pos[0] > rgoal[0] - fieldwidth // 14) and (last_seen.pos[1] > rgoal[1]) and (last_seen.pos[1] < rgoal[2]):
-            score[0] += 1
-        if (last_seen.pos[0] < lgoal[0] + fieldwidth // 14) and (last_seen.pos[1] > lgoal[1]) and (last_seen.pos[1] < lgoal[2]):
-            score[1] += 1
+        if last_seen.pos[1] > goals[2] and last_seen.pos[1] < goals[3]:
+            if last_seen.pos[0] > regions[-1]:
+                score[0] += 1
+            elif last_seen.pos[0] < regions[0]:
+                score[1] += 1
 
 
     #########################################################################
@@ -368,8 +372,8 @@ while True:
 
     # Draw goal rectangles
     if args.goals:
-        cv2.rectangle(frame, (0, lgoal[1]), (lgoal[0] + lwidth // 7, lgoal[2]), cyan, draw_thickness)
-        cv2.rectangle(frame, (rgoal[0] - rwidth // 7, rgoal[1]), (res[0], rgoal[2]), cyan, draw_thickness)
+        cv2.rectangle(frame, (0, goals[2]), (regions[0], goals[3]), cyan, draw_thickness)
+        cv2.rectangle(frame, (regions[-1], goals[2]), (res[0], goals[3]), cyan, draw_thickness)
 
     # Draw score, speed and angle on frame
     if args.text:
