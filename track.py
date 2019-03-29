@@ -10,7 +10,6 @@ from argparse import ArgumentParser
 
 # Constants
 field_update_timer = 60
-speedvect_scalar = 2
 team_black = 0
 team_white = 1
 keeper   = 0
@@ -47,7 +46,8 @@ class datapoint:
 
 # Hit definition
 class hit:
-    def __init__(self, team=None, player=None):
+    def __init__(self, type, team=None, player=None):
+        self.type = type
         self.team = team
         self.player = player
 
@@ -240,7 +240,7 @@ while True:
             # Predict the location based on last_seen
             dx = hidden_timer * last_seen.speed * math.cos(math.radians(last_seen.angle))
             dy = -hidden_timer * last_seen.speed * math.sin(math.radians(last_seen.angle))
-            prediction = (last_seen.pos[0] + dx, last_seen.pos[1] + dy)
+            prediction = (min(max(0, last_seen.pos[0] + dx), res[0]), min(max(0, last_seen.pos[1] + dy), res[1]))
             # Note that prediction is equal to last_seen.pos if hidden_timer = 0
             speed = np.linalg.norm(np.array(prediction) - np.array(ballcenter))
             angle = calc_angle(prediction, ballcenter)
@@ -275,7 +275,7 @@ while True:
             if speed_hit or angle_hit:
                 # Outside of green area, assume a side was hit
                 if Delaunay(hull).find_simplex(last_seen.pos) < 0:
-                    new_hit = hit()
+                    new_hit = hit((speed_hit, angle_hit))
                 # Inside the field, determine which (row of) player(s) it was
                 else:
                     if last_seen.pos[0] < regions[0]:
@@ -302,7 +302,7 @@ while True:
                     else:
                         team = team_white
                         player = keeper
-                    new_hit = hit(team=team, player=player)
+                    new_hit = hit((speed_hit, angle_hit), team=team, player=player)
                 history[-1 - hidden_timer].hit = new_hit
                 hit_timer = 0
                 wait_time = args.wait_on_hits
@@ -321,10 +321,42 @@ while True:
     # and the ball has been gone for 10 frames then a goal was made
     if last_seen and hidden_timer == 10:
         if last_seen.pos[1] > goals[2] and last_seen.pos[1] < goals[3]:
-            if last_seen.pos[0] > regions[-1]:
-                score[0] += 1
-            elif last_seen.pos[0] < regions[0]:
-                score[1] += 1
+            shot = last_seen.pos[0]
+            team = None
+            player = None
+            if last_seen.pos[0] > (regions[-1] + regions[-2]) / 2:
+                for dp in reversed(history):
+                    if dp and dp.hit:
+                        if dp.pos[0] <= shot:
+                            shot = dp.pos[0]
+                            team = dp.hit.team
+                            player = dp.hit.player
+                        else:
+                            break
+                if team is None or player == midfield:
+                    pass
+                elif player == keeper and team == team_black:
+                    score[0] += 1
+                    score[1] = max(0, score[1] - 1)
+                else:
+                    score[0] += 1
+            elif last_seen.pos[0] < (regions[0] + regions[1]) / 2:
+                for dp in reversed(history):
+                    if dp and dp.hit:
+                        if dp.pos[0] >= shot:
+                            shot = dp.pos[0]
+                            team = dp.hit.team
+                            player = dp.hit.player
+                        else:
+                            break
+                if team is None or player == midfield:
+                    pass
+                elif player == keeper and team == team_white:
+                    score[1] += 1
+                    score[0] = max(0, score[0] - 1)
+                else:
+                    score[1] += 1
+
 
 
     #########################################################################
@@ -339,18 +371,20 @@ while True:
             cv2.circle(frame, last_seen.pos, ballradius, blue, draw_thickness)
         if args.hit_detection:
             # Draw area between the thresholds on frame
-            outerpts = cv2.ellipse2Poly(last_seen.pos, (int(speedvect_scalar * max(0, comparison_speed - speed_thresh)), int(speedvect_scalar * max(0, comparison_speed - speed_thresh))), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
-            innerpts = cv2.ellipse2Poly(last_seen.pos, (int(speedvect_scalar * (comparison_speed + speed_thresh)), int(speedvect_scalar * (comparison_speed + speed_thresh))), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
+            pos = last_seen.pos
+            for dp in reversed(history[:-1]):
+                if dp:
+                    pos = dp.pos
+                    break
+            outerpts = cv2.ellipse2Poly(pos, (int(max(0, comparison_speed - speed_thresh)), int(max(0, comparison_speed - speed_thresh))), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
+            innerpts = cv2.ellipse2Poly(pos, (int(comparison_speed + speed_thresh), int(comparison_speed + speed_thresh)), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
             pts = np.vstack((outerpts, innerpts[::-1]))
             cv2.fillPoly(frame, [pts], green)
-            dx = int(speedvect_scalar * last_seen.speed * math.cos(math.radians(angle)))
-            dy = -int(speedvect_scalar * last_seen.speed * math.sin(math.radians(angle)))
-            cv2.arrowedLine(frame, last_seen.pos, (last_seen.pos[0] + dx, last_seen.pos[1] + dy), blue, draw_thickness)
 
 
     # Draw recent history
     if args.history:
-        for i in range(max(1, len(history) - 30), len(history)):
+        for i in range(max(1, len(history) - 100), len(history)):
             if history[i]:
                 # Also draw hits where applicable
                 if args.hits and history[i].hit:
@@ -372,8 +406,8 @@ while True:
 
     # Draw goal rectangles
     if args.goals:
-        cv2.rectangle(frame, (0, goals[2]), (regions[0], goals[3]), cyan, draw_thickness)
-        cv2.rectangle(frame, (regions[-1], goals[2]), (res[0], goals[3]), cyan, draw_thickness)
+        cv2.rectangle(frame, (0, goals[2]), ((regions[0] + regions[1]) // 2, goals[3]), cyan, draw_thickness)
+        cv2.rectangle(frame, ((regions[-1] + regions[-2]) // 2, goals[2]), (res[0], goals[3]), cyan, draw_thickness)
 
     # Draw score, speed and angle on frame
     if args.text:
@@ -418,10 +452,10 @@ if args.heatmap:
             cv2.addWeighted(temp, alpha, heatmap, 1 - alpha, 0, heatmap)
             # Also draw hits
             if args.hits and dp.hit:
-                temp = frame.copy()
+                temp = heatmap.copy()
                 cv2.circle(temp, dp.pos, ballradius // 2, dp.hit.get_color(), -1)
                 alpha = 0.5
-                cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
+                cv2.addWeighted(temp, alpha, heatmap, 1 - alpha, 0, heatmap)
 
     # Fullscreen
     cv2.namedWindow("Heatmap", cv2.WND_PROP_FULLSCREEN)
