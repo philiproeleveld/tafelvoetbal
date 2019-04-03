@@ -37,11 +37,13 @@ upper_green  = (100, 255, 150)
 
 # Datapoint definition
 class datapoint:
-    def __init__(self, pos, speed, angle, accuracy):
+    def __init__(self, pos, speed, angle, accuracy, hull, fieldcenter):
         self.pos = pos
         self.speed = speed
         self.angle = angle
         self.accuracy = accuracy
+        self.hull = hull
+        self.fieldcenter = fieldcenter
         self.hit = None
 
 # Hit definition
@@ -94,7 +96,7 @@ def mean_angle(angles):
 
 # Configure ArgumentParser
 parser = ArgumentParser()
-parser.add_argument("-s", "--source", metavar="SRC", help="specify video source location")
+parser.add_argument("-s", "--source", metavar="SRC", help="specify path to video source")
 parser.add_argument("--flip", action="store_true", help="flip the video source")
 parser.add_argument("--ball", action="store_false", help="turn OFF ball tracking visualization")
 parser.add_argument("--history", action="store_false", help="turn OFF recent history visualization")
@@ -144,6 +146,7 @@ hidden_timer = 0 # Number of frames in a row where the ball is hidden
 hit_timer = 0 # Number of frames in a row since the last hit
 field_update = 0 # Recalculate field dimensions when this reaches zero
 hull = None # Defines the green area of the field
+fieldcenter = None # Coordinates of the center of the field
 goals = None # Location of the two goals based on field hull
 regions = None # Regions around the player positions (e.g. keeper, midfield)
 framecopy = None # Image of the first frame to display static images
@@ -183,13 +186,13 @@ while True:
         rightmost = hull[:, 0].max()
         fieldwidth = rightmost - leftmost
         topmost = hull[:, 1].min()
-        fieldheight = hull[:, 1].max() - topmost
+        botmost = hull[:, 1].max()
+        fieldheight = botmost - topmost
         # goals is a tuple: (xleft, xright, ytop, ybot) where xleft is the
         # x-coord of the left goal, xright is the x-coord of the right goal,
         # and ytop and ybot determine the vertical range of the two goals
         goals = (leftmost, rightmost, topmost + fieldheight // 3, topmost + 2 * fieldheight // 3)
-        # Find center field when only looking at the middle part of the frame
-        # Center field and the goals are used to calculate player regions
+        # Find field center when only looking at the middle part of the frame
         slice_offset = ((leftmost + fieldwidth // 3) // args.scaledown, goals[2] // args.scaledown)
         sliced_frame = scaled_frame[goals[2] // args.scaledown:goals[3] // args.scaledown, (leftmost + fieldwidth // 3) // args.scaledown:(leftmost + 2 * fieldwidth // 3) // args.scaledown, :]
         center_frame = mask_frame(sliced_frame, lower_blue, upper_blue)
@@ -200,17 +203,18 @@ while True:
             avg += slice_offset
             avg *= args.scaledown
             fieldcenter = (int(avg[0]), int(avg[1]))
-            lwidth = fieldcenter[0] - goals[0]
-            rwidth = goals[1] - fieldcenter[0]
-            regions = []
-            for i in range(4):
-                regions.append(goals[0] + (1 + 2*i) * lwidth // 7)
-            for i in range(1, 4):
-                regions.append(fieldcenter[0] + 2*i * rwidth // 7)
         else:
-            regions = [goals[0] + (1 + 2*i) * fieldwidth // 14 for i in range(7)]
+            # Use field hull to estimate field center
+            fieldcenter = ((leftmost + rightmost) // 2, (topmost + botmost) // 2)
             # An update is required asap
             field_update = 0
+        # Field center is used to calculate regions which is a list of the 7
+        # x-coords that define vertical lines that divide the 8 player regions
+        regions = []
+        for i in range(4):
+            regions.append(leftmost + (1 + 2*i) * (fieldcenter[0] - leftmost) // 7)
+        for i in range(1, 4):
+            regions.append(fieldcenter[0] + 2*i * (rightmost - fieldcenter[0]) // 7)
     # Recalculate after some amount of frames
     elif field_update == field_update_timer:
         field_update = 0
@@ -309,7 +313,7 @@ while True:
             else:
                 hit_timer += 1
 
-        last_seen = datapoint(ballcenter, speed, angle, accuracy)
+        last_seen = datapoint(ballcenter, speed, angle, accuracy, hull, fieldcenter)
         history.append(last_seen)
         hidden_timer = 0
     # Couldn't find ball
