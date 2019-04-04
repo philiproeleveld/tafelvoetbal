@@ -4,12 +4,16 @@ The goal of this project is to automate the arbitration of foosball given the (l
 
 ### Documentation
 
-`track.py` contains the functional code. Before running this script, be sure to install the requirements as specified by `python_requirements.txt`. The script can be called with various flags. A list of these flags and what they do is as follows:
+`track.py` contains the functional tracking code. Before running this script, be sure to install the requirements as specified by `python_requirements.txt`. The script can be executed with a multitude of optional arguments. The script can be called in two ways. The first way is simply to run the script directly. The optional arguments can be passed as flags. See below for a list of these flags.
 
-`track.py [-h] [-s SRC] [--flip] [--ball] [--history] [--hits] [--text]
-                [--field] [--goals] [--hit-detection] [--heatmap] [--wait N]
-                [--wait-on-hits N] [--scaledown N]`
+The second way to use the script is to import it and call the main method. In this case, the optional arguments can be passed to the main function directly. The names are exactly the same as the names of flags (minus the leading `--`), except that hyphens should be replaced by underscores. As an example, the following two execute the same code:  
+`python track.py -s "game.mp4" --hit-detection`  
+```python
+import track
+track.main(source="game.mp4", hit_detection=True)
+```
 
+A complete list of optional flags is as follows: 
 - `-h`, `--help`  
     Show this list and exit.
 
