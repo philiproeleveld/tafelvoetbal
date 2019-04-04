@@ -52,6 +52,7 @@ class hit:
         self.type = type
         self.team = team
         self.player = player
+        self.goal = None
 
     def get_color(self):
         if self.team == team_black:
@@ -323,43 +324,67 @@ while True:
 
     # Check for goals: if last known location was near a goal
     # and the ball has been gone for 10 frames then a goal was made
-    if last_seen and hidden_timer == 10:
-        if last_seen.pos[1] > goals[2] and last_seen.pos[1] < goals[3]:
-            shot = last_seen.pos[0]
-            team = None
-            player = None
-            if last_seen.pos[0] > (regions[-1] + regions[-2]) / 2:
-                for dp in reversed(history):
-                    if dp and dp.hit:
-                        if dp.pos[0] <= shot:
-                            shot = dp.pos[0]
-                            team = dp.hit.team
-                            player = dp.hit.player
-                        else:
+    if hidden_timer == 10 and last_seen and last_seen.pos[1] > goals[2] and last_seen.pos[1] < goals[3]:
+        shot = last_seen.pos[0]
+        team = None
+        player = None
+        slowframes = 0
+        # Goal at the right side of the field
+        if last_seen.pos[0] > (regions[-1] + regions[-2]) / 2:
+            for i in reversed(range(len(history))):
+                dp = history[i]
+                if dp and dp.hit:
+                    if dp.speed < 20:
+                        slowframes += 1
+                        if slowframes == 5:
                             break
-                if team is None or player == midfield:
-                    pass
-                elif player == keeper and team == team_black:
-                    score[0] += 1
-                    score[1] = max(0, score[1] - 1)
-                else:
-                    score[0] += 1
-            elif last_seen.pos[0] < (regions[0] + regions[1]) / 2:
-                for dp in reversed(history):
-                    if dp and dp.hit:
-                        if dp.pos[0] >= shot:
-                            shot = dp.pos[0]
-                            team = dp.hit.team
-                            player = dp.hit.player
-                        else:
+                    if dp.pos[0] <= shot:
+                        shot = dp.pos[0]
+                        team = dp.hit.team
+                        player = dp.hit.player
+                    else:
+                        break
+            while True:
+                i += 1
+                if history[i] and history[i].hit:
+                    break
+            history[i].hit.goal = team_white
+            print(str(history[i].hit))
+            if team is None or player == midfield:
+                pass
+            elif player == keeper and team == team_black:
+                score[0] += 1
+                score[1] = max(0, score[1] - 1)
+            else:
+                score[0] += 1
+        # Goal at the left side of the field
+        elif last_seen.pos[0] < (regions[0] + regions[1]) / 2:
+            for i in reversed(range(len(history))):
+                dp = history[i]
+                if dp and dp.hit:
+                    if dp.speed < 20:
+                        slowframes += 1
+                        if slowframes == 5:
                             break
-                if team is None or player == midfield:
-                    pass
-                elif player == keeper and team == team_white:
-                    score[1] += 1
-                    score[0] = max(0, score[0] - 1)
-                else:
-                    score[1] += 1
+                    if dp.pos[0] >= shot:
+                        shot = dp.pos[0]
+                        team = dp.hit.team
+                        player = dp.hit.player
+                    else:
+                        break
+            while True:
+                i += 1
+                if history[i] and history[i].hit:
+                    break
+            history[i].hit.goal = team_black
+            print(str(history[i].hit))
+            if team is None or player == midfield:
+                pass
+            elif player == keeper and team == team_white:
+                score[1] += 1
+                score[0] = max(0, score[0] - 1)
+            else:
+                score[1] += 1
 
 
 
