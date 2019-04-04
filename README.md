@@ -20,25 +20,25 @@ The goal of this project is to automate the arbitration of foosball given the (l
     Flip the footage horizontally.
 
 - `--ball`  
-    Toggle ball tracking visualization. (Default: ON)
+    Turn on ball tracking visualization.
 
 - `--history`  
-    Toggle recent history visualization. (Default: ON)
+    Turn on recent history visualization.
 
 - `--hits`  
-    Toggle hit visualization. (Default: ON)
+    Turn on hit visualization.
 
 - `--text`  
-    Toggle textual data. (Default: ON)
+    Turn on textual data.
 
 - `--field`  
-    Toggle field bounding box visualization. (Default: OFF)
+    Turn on field bounding box visualization.
 
 - `--goals`  
-    Toggle goal bounding box visualization. (Default: OFF)
+    Turn on goal bounding box visualization.
 
 - `--hit-detection`  
-    Toggle hit detection visualization. (Default: OFF)
+    Turn on hit detection visualization.
 
 - `--heatmap`  
     Show a heatmap after the video is done.

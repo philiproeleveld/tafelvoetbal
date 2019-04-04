@@ -98,10 +98,10 @@ def mean_angle(angles):
 parser = ArgumentParser()
 parser.add_argument("-s", "--source", metavar="SRC", help="specify path to video source")
 parser.add_argument("--flip", action="store_true", help="flip the video source")
-parser.add_argument("--ball", action="store_false", help="turn OFF ball tracking visualization")
-parser.add_argument("--history", action="store_false", help="turn OFF recent history visualization")
-parser.add_argument("--hits", action="store_false", help="turn OFF hit visualization")
-parser.add_argument("--text", action="store_false", help="turn OFF textual data")
+parser.add_argument("--ball", action="store_true", help="turn ON ball tracking visualization")
+parser.add_argument("--history", action="store_true", help="turn ON recent history visualization")
+parser.add_argument("--hits", action="store_true", help="turn ON hit visualization")
+parser.add_argument("--text", action="store_true", help="turn ON textual data")
 parser.add_argument("--field", action="store_true", help="turn ON field bounding box visualization")
 parser.add_argument("--goals", action="store_true", help="turn ON goal bounding box visualization")
 parser.add_argument("--hit-detection", action="store_true", help="turn ON hit detection visualization")
@@ -386,8 +386,8 @@ while True:
             cv2.fillPoly(frame, [pts], green)
 
 
-    # Draw recent history
-    if args.history:
+    # Draw recent history and/or hits
+    if args.history or args.hits:
         for i in range(max(1, len(history) - 100), len(history)):
             if history[i]:
                 # Also draw hits where applicable
@@ -396,11 +396,12 @@ while True:
                     cv2.circle(temp, history[i].pos, ballradius // 2, history[i].hit.get_color(), -1)
                     alpha = 0.5
                     cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
-                j = i - 1
-                while j > 0 and not history[j]:
-                    j -= 1
-                if history[j]:
-                    cv2.line(frame, history[j].pos, history[i].pos, pink, draw_thickness)
+                if args.history:
+                    j = i - 1
+                    while j > 0 and not history[j]:
+                        j -= 1
+                    if history[j]:
+                        cv2.line(frame, history[j].pos, history[i].pos, pink, draw_thickness)
 
     # Draw field hull and player regions
     if args.field:
