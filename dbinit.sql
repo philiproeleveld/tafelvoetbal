@@ -1,5 +1,5 @@
-create database if not exists tafelvoetbal;
-use tafelvoetbal;
+create database if not exists Tafelvoetbal;
+use Tafelvoetbal;
 
 create table if not exists Players (
     ID int not null auto_increment,
