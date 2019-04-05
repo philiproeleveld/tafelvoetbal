@@ -1,4 +1,5 @@
 import sys
+import time
 import cv2
 import numpy as np
 import math
@@ -6,10 +7,7 @@ import cmath
 from scipy.spatial import Delaunay
 from argparse import ArgumentParser
 
-
-
 # Constants
-field_update_timer = 60
 team_black = 0
 team_white = 1
 keeper   = 0
@@ -33,20 +31,23 @@ upper_blue   = (110, 255, 255)
 lower_green  = ( 70,  70,  50)
 upper_green  = (100, 255, 150)
 
-
-
-# Datapoint definition
+# Datapoint class to store data about a single frame
 class datapoint:
-    def __init__(self, pos, speed, angle, accuracy, hull, fieldcenter):
+    # __init__() creates a dummy instance (see game_data class for more information)
+    # to store actual data about a datapoint use set_data() after initialization
+    def __init__(self):
+        self.hidden = 0
+        self.hit = None
+
+    def set_data(self, pos, speed, angle, accuracy, hull, fieldcenter):
         self.pos = pos
         self.speed = speed
         self.angle = angle
         self.accuracy = accuracy
         self.hull = hull
         self.fieldcenter = fieldcenter
-        self.hit = None
 
-# Hit definition
+# Hit class to store data about single hits
 class hit:
     def __init__(self, type, team=None, player=None):
         self.type = type
@@ -62,7 +63,48 @@ class hit:
         else:
             return red
 
+# Game class to remember data about the entire game
+class game_data:
+    def __init__(self):
+        # datapoints is a list of datapoints, the last of which is always a
+        # dummy that tracks the number of frames the ball has been hidden
+        # As soon as the ball reappears, the dummy datapoint stores that data,
+        # and a new dummy is created to take its place
+        self.datapoints = [datapoint()]
+        self.score = [0, 0]
+        self.time = 0 # Time at which the game started
+        self.duration = 0
 
+    def start(self):
+        self.time = time.time()
+
+    def stop(self):
+        self.duration = time.time() - self.time
+        self.datapoints.pop(-1)
+
+    def add_score(self, score, team):
+        self.score[team] = max(0, self.score[team] + score)
+
+    def add_dp(self):
+        self.datapoints.append(datapoint())
+
+    def last_seen(self):
+        if self.datapoints[:-1]:
+            return self.datapoints[-2]
+        return None
+
+    def is_done(self):
+        return abs(self.score[0] - self.score[1]) >= 2 and (self.score[0] >= 10 or self.score[1] >= 10)
+
+# Field class to remember the current field dimensions, and when to update this
+class field_data:
+    update_timer = 60
+    def __init__(self):
+        self.update = 0 # Recalculate field dimensions when this reaches zero
+        self.hull = None # Defines the green area of the field
+        self.center = None # Coordinates of the center of the field
+        self.goals = None # Location of the two goals based on field hull
+        self.regions = None # Regions around the player positions (e.g. keeper, midfield)
 
 # Make tracking easier by masking pixels outside the range (lower, upper)
 def mask_frame(frame, lower, upper):
@@ -92,6 +134,246 @@ def calc_angle(point1, point2):
 # See https://rosettacode.org/wiki/Averages/Mean_angle for an explanation
 def mean_angle(angles):
     return math.degrees(cmath.phase(sum(cmath.rect(1, math.radians(angle)) for angle in angles)/len(angles))) % 360
+
+
+
+def track(frame, game, field, scaledown, hit_detection=None):
+    """
+    Functional tracking code: Find the ball in the frame, storing relevant data
+    inside the game and field objects.
+
+    arguments:
+    frame               frame in which to do the computations
+    game                game_data instance containing all data about the ball and game
+    field               field_data instance containing the most recent field dimensions
+    scaledown           factor to scale down footage by before doing calculations
+
+    optional arguments:
+    hit_detection       default: None
+        if not none, it will be filled as a tuple of four elements:
+        (comparison_speed, speed_thresh, comparison_angle, angle_thresh)
+        which can be used to draw the hit detection cone
+
+    returns:
+    game                the game_data instance passed to the function filled with new data
+    """
+    res = (frame.shape[1], frame.shape[0])
+    lower_pix_thresh = 100 * (res[0] / (640 * scaledown)) ** 2
+    upper_pix_thresh = 400 * (res[0] / (640 * scaledown)) ** 2
+    scaled_frame = cv2.resize(frame, (res[0] // scaledown, res[1] // scaledown))
+
+    if field.update == 0:
+        # Determine what the field looks like (without sloped/white edges)
+        field_frame = mask_frame(scaled_frame, lower_green, upper_green)
+        field_frame = cv2.split(field_frame)[2]
+        coords = cv2.findNonZero(field_frame)
+        if coords is None:
+            return
+        hull = cv2.convexHull(coords) * scaledown
+        field.hull = np.reshape(hull, (np.size(hull) // 2, 2))
+        leftmost = field.hull[:, 0].min()
+        rightmost = field.hull[:, 0].max()
+        fieldwidth = rightmost - leftmost
+        topmost = field.hull[:, 1].min()
+        botmost = field.hull[:, 1].max()
+        fieldheight = botmost - topmost
+        # goals is a tuple: (xleft, xright, ytop, ybot) where xleft is the
+        # x-coord of the left goal, xright is the x-coord of the right goal,
+        # and ytop and ybot determine the vertical range of the two goals
+        field.goals = (leftmost, rightmost, topmost + fieldheight // 3, topmost + 2 * fieldheight // 3)
+        # Find field center when only looking at the middle part of the frame
+        slice_offset = ((leftmost + fieldwidth // 3) // scaledown, field.goals[2] // scaledown)
+        sliced_frame = scaled_frame[field.goals[2] // scaledown:field.goals[3] // scaledown, (leftmost + fieldwidth // 3) // scaledown:(leftmost + 2 * fieldwidth // 3) // scaledown, :]
+        center_frame = mask_frame(sliced_frame, lower_blue, upper_blue)
+        center_frame = cv2.split(center_frame)[2]
+        coords = cv2.findNonZero(center_frame)
+        if np.size(coords) > lower_pix_thresh:
+            avg = np.mean(coords, (0, 1))
+            avg += slice_offset
+            avg *= scaledown
+            field.center = (int(avg[0]), int(avg[1]))
+            # Update was successful
+            field.update += 1
+        else:
+            # Use field hull to estimate field center
+            field.center = ((leftmost + rightmost) // 2, (topmost + botmost) // 2)
+            # An update is required asap
+            field.update = 0
+        # Field center is used to calculate regions which is a list of the 7
+        # x-coords that define vertical lines that divide the 8 player regions
+        field.regions = []
+        for i in range(4):
+            field.regions.append(leftmost + (1 + 2*i) * (field.center[0] - leftmost) // 7)
+        for i in range(1, 4):
+            field.regions.append(field.center[0] + 2*i * (rightmost - field.center[0]) // 7)
+    # Recalculate after some amount of frames specified by the field_data class
+    else:
+        field.update = (field.update + 1) % field_data.update_timer
+
+    # Find ball based on color
+    ball_frame = mask_frame(scaled_frame, lower_yellow, upper_yellow)
+    ball_frame = cv2.split(ball_frame)[2]
+    coords = cv2.findNonZero(ball_frame)
+    # Accuracy of ball detection to be used in determining hit thresholds
+    accuracy = min(1, (np.size(coords) - lower_pix_thresh) / (upper_pix_thresh - lower_pix_thresh))
+    # If enough pixels are found
+    if accuracy > 0:
+        avg = np.mean(coords, (0, 1)) * scaledown
+        ballcenter = (int(avg[0]), int(avg[1]))
+        # If the ball has not been seen before at all
+        if not game.last_seen():
+            game.start()
+            speed = 0
+            angle = 0
+        else:
+            # Predict the location based on game.last_seen()
+            dx = game.datapoints[-1].hidden * game.last_seen().speed * math.cos(math.radians(game.last_seen().angle))
+            dy = -game.datapoints[-1].hidden * game.last_seen().speed * math.sin(math.radians(game.last_seen().angle))
+            prediction = (min(max(0, game.last_seen().pos[0] + dx), res[0]), min(max(0, game.last_seen().pos[1] + dy), res[1]))
+            # Note that prediction is equal to game.last_seen().pos if the ball is hidden for 0 frames
+            speed = np.linalg.norm(np.array(prediction) - np.array(ballcenter))
+            angle = calc_angle(prediction, ballcenter)
+            # If the ball hasn't moved at all
+            if angle is None:
+                # Set angle to last known angle instead
+                angle = game.last_seen().angle
+
+            # Determine hits
+            # Compare speed only to the first previously known speed
+            comparison_speed = game.last_seen().speed
+            # Threshold for speed-based hit detection is depends on current speed
+            speed_thresh = 100 / (1 +  10 * accuracy ** 2 / 2 ** (comparison_speed / 25))
+
+            # Compare angle to average of all previous angles up to the last hit
+            angles = []
+            for dp in reversed(game.datapoints[:-1]):
+                if dp.angle is not None:
+                    angles.append(dp.angle)
+                if dp.hit:
+                    break
+            if angles:
+                comparison_angle = mean_angle(angles)
+            else:
+                comparison_angle = game.last_seen().angle
+            # Threshold for angle-based hit detection is determined by speed
+            angle_thresh = min(90, 450 / ((comparison_speed * accuracy) ** 0.7 + 3))
+
+            # Save data to draw hit detection
+            if hit_detection:
+                hit_detection[0] = comparison_speed
+                hit_detection[1] = speed_thresh
+                hit_detection[2] = comparison_angle
+                hit_detection[3] = angle_thresh
+
+            # Detect a hit
+            speed_hit = abs(speed - comparison_speed) > speed_thresh
+            angle_hit = (comparison_angle - angle) % 360 > angle_thresh and (angle - comparison_angle) % 360 > angle_thresh
+
+            if speed_hit or angle_hit:
+                # Outside of green area, assume a side was hit
+                if Delaunay(field.hull).find_simplex(game.last_seen().pos) < 0:
+                    new_hit = hit((speed_hit, angle_hit))
+                # Inside the field, determine which (row of) player(s) it was
+                else:
+                    last_xpos = game.last_seen().pos[0]
+                    if last_xpos < field.regions[0]:
+                        team = team_black
+                        player = keeper
+                    elif last_xpos < field.regions[1]:
+                        team = team_black
+                        player = defense
+                    elif last_xpos < field.regions[2]:
+                        team = team_white
+                        player = offense
+                    elif last_xpos < field.regions[3]:
+                        team = team_black
+                        player = midfield
+                    elif last_xpos < field.regions[4]:
+                        team = team_white
+                        player = midfield
+                    elif last_xpos < field.regions[5]:
+                        team = team_black
+                        player = offense
+                    elif last_xpos < field.regions[6]:
+                        team = team_white
+                        player = defense
+                    else:
+                        team = team_white
+                        player = keeper
+                    new_hit = hit((speed_hit, angle_hit), team=team, player=player)
+                game.last_seen().hit = new_hit
+
+        game.datapoints[-1].set_data(ballcenter, speed, angle, accuracy, field.hull, field.center)
+        game.add_dp()
+    # Couldn't find ball
+    else:
+        game.datapoints[-1].hidden += 1
+
+    # Check for goals: if last known location was near a goal
+    # and the ball has been gone for 10 frames then a goal was made
+    if game.datapoints[-1].hidden == 10 and game.last_seen() and game.last_seen().pos[1] > field.goals[2] and game.last_seen().pos[1] < field.goals[3]:
+        shot = game.last_seen().pos[0]
+        team = None
+        player = None
+        slowframes = 0
+        # Goal at the right side of the field
+        if shot > (field.regions[-1] + field.regions[-2]) / 2:
+            for i in reversed(range(len(game.datapoints))):
+                dp = game.datapoints[i]
+                if dp and dp.hit:
+                    if dp.speed < 20:
+                        slowframes += 1
+                        if slowframes == 5:
+                            break
+                    if dp.pos[0] <= shot:
+                        shot = dp.pos[0]
+                        team = dp.hit.team
+                        player = dp.hit.player
+                    else:
+                        break
+            while True:
+                i += 1
+                if game.datapoints[i] and game.datapoints[i].hit:
+                    break
+            game.datapoints[i].hit.goal = team_white
+            if team is None or player == midfield:
+                pass
+            elif player == keeper and team == team_black:
+                game.add_score(1, team_black)
+                game.add_score(-1, team_white)
+            else:
+                game.add_score(1, team_black)
+        # Goal at the left side of the field
+        elif shot < (field.regions[0] + field.regions[1]) / 2:
+            for i in reversed(range(len(game.datapoints))):
+                dp = game.datapoints[i]
+                if dp and dp.hit:
+                    if dp.speed < 20:
+                        slowframes += 1
+                        if slowframes == 5:
+                            break
+                    if dp.pos[0] >= shot:
+                        shot = dp.pos[0]
+                        team = dp.hit.team
+                        player = dp.hit.player
+                    else:
+                        break
+            while True:
+                i += 1
+                if game.datapoints[i] and game.datapoints[i].hit:
+                    break
+            game.datapoints[i].hit.goal = team_black
+            if team is None or player == midfield:
+                pass
+            elif player == keeper and team == team_white:
+                game.add_score(1, team_white)
+                game.add_score(-1, team_black)
+            else:
+                game.add_score(1, team_white)
+
+    return game
+
+
 
 def main(**kwargs):
     """
@@ -134,9 +416,6 @@ def main(**kwargs):
 
     wait            (integer)   1
         specify how long to wait on each frame (in ms)
-
-    wait-on-hits    (integer)   wait
-        specify how long to wait on frames where a hit occurs
     """
     # Unpack kwargs
     source = kwargs['source'] if 'source' in kwargs and kwargs['source'] else None
@@ -151,7 +430,6 @@ def main(**kwargs):
     draw_hit_detection = kwargs['hit_detection'] if 'hit_detection' in kwargs else False
     draw_heatmap = kwargs['heatmap'] if 'heatmap' in kwargs else False
     wait = kwargs['wait'] if 'wait' in kwargs else 1
-    wait_on_hits = kwargs['wait_on_hits'] if 'wait_on_hits' in kwargs and kwargs['wait_on_hits'] else wait
 
     # Load video
     if source:
@@ -171,31 +449,14 @@ def main(**kwargs):
     scale = res[0] / 640
     draw_thickness = max(1, int(scale) - 1)
     ballradius = int(10 * scale)
-    lower_pix_thresh = 100 * (scale / scaledown) ** 2
-    upper_pix_thresh = 400 * (scale / scaledown) ** 2
-
-
 
     # Variables
-    score = [0, 0]
-    history = [] # List of all datapoints (an entry is None if the ball was hidden)
-    last_seen = None # Last location the ball was detected
-    hidden_timer = 0 # Number of frames in a row where the ball is hidden
-    hit_timer = 0 # Number of frames in a row since the last hit
-    field_update = 0 # Recalculate field dimensions when this reaches zero
-    hull = None # Defines the green area of the field
-    fieldcenter = None # Coordinates of the center of the field
-    goals = None # Location of the two goals based on field hull
-    regions = None # Regions around the player positions (e.g. keeper, midfield)
-    framecopy = None # Image of the first frame to display static images
-
-
+    game = game_data()
+    field = field_data()
+    thumbnail = None # Image of the first frame to display static images
 
     # Loop over all frames
     while True:
-        # actua_wait will be set to wait_on_hits if a hit occurs
-        actual_wait = wait
-
         ok, frame = vid.read()
         if not ok:
             break
@@ -203,326 +464,103 @@ def main(**kwargs):
         if flip:
             frame = cv2.flip(frame, 1)
 
-        scaled_frame = cv2.resize(frame, (res[0] // scaledown, res[1] // scaledown))
-
-        # Set framecopy to the first frame found
-        if draw_heatmap:
-            if framecopy is None:
-                framecopy = frame.copy()
-
-        field_update += 1
-        if field_update == 1:
-            # Determine what the field looks like (without sloped/white edges)
-            field_frame = mask_frame(scaled_frame, lower_green, upper_green)
-            field_frame = cv2.split(field_frame)[2]
-            coords = cv2.findNonZero(field_frame)
-            if coords is None:
-                break
-            hull = cv2.convexHull(coords) * scaledown
-            hull = np.reshape(hull, (np.size(hull) // 2, 2))
-            leftmost = hull[:, 0].min()
-            rightmost = hull[:, 0].max()
-            fieldwidth = rightmost - leftmost
-            topmost = hull[:, 1].min()
-            botmost = hull[:, 1].max()
-            fieldheight = botmost - topmost
-            # goals is a tuple: (xleft, xright, ytop, ybot) where xleft is the
-            # x-coord of the left goal, xright is the x-coord of the right goal,
-            # and ytop and ybot determine the vertical range of the two goals
-            goals = (leftmost, rightmost, topmost + fieldheight // 3, topmost + 2 * fieldheight // 3)
-            # Find field center when only looking at the middle part of the frame
-            slice_offset = ((leftmost + fieldwidth // 3) // scaledown, goals[2] // scaledown)
-            sliced_frame = scaled_frame[goals[2] // scaledown:goals[3] // scaledown, (leftmost + fieldwidth // 3) // scaledown:(leftmost + 2 * fieldwidth // 3) // scaledown, :]
-            center_frame = mask_frame(sliced_frame, lower_blue, upper_blue)
-            center_frame = cv2.split(center_frame)[2]
-            coords = cv2.findNonZero(center_frame)
-            if np.size(coords) > lower_pix_thresh:
-                avg = np.mean(coords, (0, 1))
-                avg += slice_offset
-                avg *= scaledown
-                fieldcenter = (int(avg[0]), int(avg[1]))
-            else:
-                # Use field hull to estimate field center
-                fieldcenter = ((leftmost + rightmost) // 2, (topmost + botmost) // 2)
-                # An update is required asap
-                field_update = 0
-            # Field center is used to calculate regions which is a list of the 7
-            # x-coords that define vertical lines that divide the 8 player regions
-            regions = []
-            for i in range(4):
-                regions.append(leftmost + (1 + 2*i) * (fieldcenter[0] - leftmost) // 7)
-            for i in range(1, 4):
-                regions.append(fieldcenter[0] + 2*i * (rightmost - fieldcenter[0]) // 7)
-        # Recalculate after some amount of frames
-        elif field_update == field_update_timer:
-            field_update = 0
-
         # Declare some variables to draw hit detection later
         if draw_hit_detection:
-            comparison_speed = 0
-            speed_thresh = 0
-            comparison_angle = 0
-            angle_thresh = 0
-
-        # Find ball based on color
-        ball_frame = mask_frame(scaled_frame, lower_yellow, upper_yellow)
-        ball_frame = cv2.split(ball_frame)[2]
-        coords = cv2.findNonZero(ball_frame)
-        # Accuracy of ball detection to be used in determining hit thresholds
-        accuracy = min(1, (np.size(coords) - lower_pix_thresh) / (upper_pix_thresh - lower_pix_thresh))
-        # If enough pixels are found
-        if accuracy > 0:
-            avg = np.mean(coords, (0, 1)) * scaledown
-            ballcenter = (int(avg[0]), int(avg[1]))
-            # If the ball has not been seen before at all
-            if not last_seen:
-                speed = 0
-                angle = 0
-            else:
-                # Predict the location based on last_seen
-                dx = hidden_timer * last_seen.speed * math.cos(math.radians(last_seen.angle))
-                dy = -hidden_timer * last_seen.speed * math.sin(math.radians(last_seen.angle))
-                prediction = (min(max(0, last_seen.pos[0] + dx), res[0]), min(max(0, last_seen.pos[1] + dy), res[1]))
-                # Note that prediction is equal to last_seen.pos if hidden_timer = 0
-                speed = np.linalg.norm(np.array(prediction) - np.array(ballcenter))
-                angle = calc_angle(prediction, ballcenter)
-                # If the ball hasn't moved at all
-                if angle is None:
-                    # Set angle to last known angle instead
-                    angle = last_seen.angle
-
-                # Determine hits
-                # Compare speed only to the first previously known speed
-                comparison_speed = last_seen.speed
-                # Threshold for speed-based hit detection is depends on current speed
-                speed_thresh = 100 / (1 +  10 * accuracy ** 2 / 2 ** (comparison_speed / 25))
-
-                # Compare angle to average of all previous angles up to the last hit
-                angles = []
-                for dp in history[-(1 + hit_timer):]:
-                    if dp:
-                        if dp.angle is not None:
-                            angles.append(dp.angle)
-                if angles:
-                    comparison_angle = mean_angle(angles)
-                else:
-                    comparison_angle = last_seen.angle
-                # Threshold for angle-based hit detection is determined by speed
-                angle_thresh = min(90, 450 / ((comparison_speed * accuracy) ** 0.7 + 3))
-
-                # Detect a hit
-                speed_hit = abs(speed - comparison_speed) > speed_thresh
-                angle_hit = (comparison_angle - angle) % 360 > angle_thresh and (angle - comparison_angle) % 360 > angle_thresh
-
-                if speed_hit or angle_hit:
-                    # Outside of green area, assume a side was hit
-                    if Delaunay(hull).find_simplex(last_seen.pos) < 0:
-                        new_hit = hit((speed_hit, angle_hit))
-                    # Inside the field, determine which (row of) player(s) it was
-                    else:
-                        if last_seen.pos[0] < regions[0]:
-                            team = team_black
-                            player = keeper
-                        elif last_seen.pos[0] < regions[1]:
-                            team = team_black
-                            player = defense
-                        elif last_seen.pos[0] < regions[2]:
-                            team = team_white
-                            player = offense
-                        elif last_seen.pos[0] < regions[3]:
-                            team = team_black
-                            player = midfield
-                        elif last_seen.pos[0] < regions[4]:
-                            team = team_white
-                            player = midfield
-                        elif last_seen.pos[0] < regions[5]:
-                            team = team_black
-                            player = offense
-                        elif last_seen.pos[0] < regions[6]:
-                            team = team_white
-                            player = defense
-                        else:
-                            team = team_white
-                            player = keeper
-                        new_hit = hit((speed_hit, angle_hit), team=team, player=player)
-                    history[-1 - hidden_timer].hit = new_hit
-                    hit_timer = 0
-                    actual_wait = wait_on_hits
-                else:
-                    hit_timer += 1
-
-            last_seen = datapoint(ballcenter, speed, angle, accuracy, hull, fieldcenter)
-            history.append(last_seen)
-            hidden_timer = 0
-        # Couldn't find ball
+            hit_detection = [0, 0, 0, 0]
         else:
-            history.append(None)
-            hidden_timer += 1
+            hit_detection = None
 
-        # Check for goals: if last known location was near a goal
-        # and the ball has been gone for 10 frames then a goal was made
-        if hidden_timer == 10 and last_seen and last_seen.pos[1] > goals[2] and last_seen.pos[1] < goals[3]:
-            shot = last_seen.pos[0]
-            team = None
-            player = None
-            slowframes = 0
-            # Goal at the right side of the field
-            if last_seen.pos[0] > (regions[-1] + regions[-2]) / 2:
-                for i in reversed(range(len(history))):
-                    dp = history[i]
-                    if dp and dp.hit:
-                        if dp.speed < 20:
-                            slowframes += 1
-                            if slowframes == 5:
-                                break
-                        if dp.pos[0] <= shot:
-                            shot = dp.pos[0]
-                            team = dp.hit.team
-                            player = dp.hit.player
-                        else:
-                            break
-                while True:
-                    i += 1
-                    if history[i] and history[i].hit:
-                        break
-                history[i].hit.goal = team_white
-                print(str(history[i].hit))
-                if team is None or player == midfield:
-                    pass
-                elif player == keeper and team == team_black:
-                    score[0] += 1
-                    score[1] = max(0, score[1] - 1)
-                else:
-                    score[0] += 1
-            # Goal at the left side of the field
-            elif last_seen.pos[0] < (regions[0] + regions[1]) / 2:
-                for i in reversed(range(len(history))):
-                    dp = history[i]
-                    if dp and dp.hit:
-                        if dp.speed < 20:
-                            slowframes += 1
-                            if slowframes == 5:
-                                break
-                        if dp.pos[0] >= shot:
-                            shot = dp.pos[0]
-                            team = dp.hit.team
-                            player = dp.hit.player
-                        else:
-                            break
-                while True:
-                    i += 1
-                    if history[i] and history[i].hit:
-                        break
-                history[i].hit.goal = team_black
-                print(str(history[i].hit))
-                if team is None or player == midfield:
-                    pass
-                elif player == keeper and team == team_white:
-                    score[1] += 1
-                    score[0] = max(0, score[0] - 1)
-                else:
-                    score[1] += 1
+        # Set thumbnail to the first frame found
+        if draw_heatmap and thumbnail is None:
+            thumbnail = frame.copy()
 
+        track(frame, game, field, scaledown, hit_detection=hit_detection)
 
-
-        #########################################################################
-        # End of functional code, the following is only for displaying purposes #
-        #########################################################################
-
-
+        ###################################################################
+        # End of functional code, the following is only for visualization #
+        ###################################################################
 
         # Draw ball tracking
-        if last_seen:
+        if game.last_seen():
             if draw_ball:
-                cv2.circle(frame, last_seen.pos, ballradius, blue, draw_thickness)
+                cv2.circle(frame, game.last_seen().pos, ballradius, blue, draw_thickness)
             if draw_hit_detection:
                 # Draw area between the thresholds on frame
-                pos = last_seen.pos
-                for dp in reversed(history[:-1]):
-                    if dp:
-                        pos = dp.pos
-                        break
-                outerpts = cv2.ellipse2Poly(pos, (int(max(0, comparison_speed - speed_thresh)), int(max(0, comparison_speed - speed_thresh))), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
-                innerpts = cv2.ellipse2Poly(pos, (int(comparison_speed + speed_thresh), int(comparison_speed + speed_thresh)), -int(comparison_angle), -int(angle_thresh), int(angle_thresh), 2)
+                pos = game.last_seen().pos
+                outerpts = cv2.ellipse2Poly(pos, (int(max(0, hit_detection[0] - hit_detection[1])), int(max(0, hit_detection[0] - hit_detection[1]))), -int(hit_detection[2]), -int(hit_detection[3]), int(hit_detection[3]), 2)
+                innerpts = cv2.ellipse2Poly(pos, (int(hit_detection[0] + hit_detection[1]), int(hit_detection[0] + hit_detection[1])), -int(hit_detection[2]), -int(hit_detection[3]), int(hit_detection[3]), 2)
                 pts = np.vstack((outerpts, innerpts[::-1]))
                 cv2.fillPoly(frame, [pts], green)
 
-
         # Draw recent history and/or hits
         if draw_history or draw_hits:
-            for i in range(max(1, len(history) - 100), len(history)):
-                if history[i]:
-                    # Also draw hits where applicable
-                    if draw_hits and history[i].hit:
-                        temp = frame.copy()
-                        cv2.circle(temp, history[i].pos, ballradius // 2, history[i].hit.get_color(), -1)
-                        alpha = 0.5
-                        cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
-                    if draw_history:
-                        j = i - 1
-                        while j > 0 and not history[j]:
-                            j -= 1
-                        if history[j]:
-                            cv2.line(frame, history[j].pos, history[i].pos, pink, draw_thickness)
+            for i in range(max(1, len(game.datapoints[:-1]) - 100), len(game.datapoints[:-1])):
+                # Also draw hits where applicable
+                if draw_hits and game.datapoints[i].hit:
+                    temp = frame.copy()
+                    cv2.circle(temp, game.datapoints[i].pos, ballradius // 2, game.datapoints[i].hit.get_color(), -1)
+                    alpha = 0.5
+                    cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
+                if draw_history:
+                    if game.datapoints[i-1]:
+                        cv2.line(frame, game.datapoints[i-1].pos, game.datapoints[i].pos, pink, draw_thickness)
 
         # Draw field hull and player regions
         if draw_field:
-            cv2.polylines(frame, [hull], True, red, draw_thickness, cv2.LINE_8)
-            for region in regions:
+            cv2.polylines(frame, [field.hull], True, red, draw_thickness, cv2.LINE_8)
+            for region in field.regions:
                 cv2.line(frame, (region, 0), (region, res[1]), red, draw_thickness)
 
         # Draw goal rectangles
         if draw_goals:
-            cv2.rectangle(frame, (0, goals[2]), ((regions[0] + regions[1]) // 2, goals[3]), cyan, draw_thickness)
-            cv2.rectangle(frame, ((regions[-1] + regions[-2]) // 2, goals[2]), (res[0], goals[3]), cyan, draw_thickness)
+            cv2.rectangle(frame, (0, field.goals[2]), ((field.regions[0] + field.regions[1]) // 2, field.goals[3]), cyan, draw_thickness)
+            cv2.rectangle(frame, ((field.regions[-1] + field.regions[-2]) // 2, field.goals[2]), (res[0], field.goals[3]), cyan, draw_thickness)
 
         # Draw score, speed and angle on frame
         if draw_text:
             # White backdrop to make text easier to read
             cv2.fillConvexPoly(frame, np.array(((0, int(res[1] - 80 * scale)), (int(200 * scale), int(res[1] - 80 * scale)), (int(200 * scale), res[1]), (0, res[1]))), white)
             # Score
-            cv2.putText(frame, "Score: " + str(score[0]) + " - " + str(score[1]), (int(3 * scale), int(res[1] - 60 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
+            cv2.putText(frame, "Score: " + str(game.score[0]) + " - " + str(game.score[1]), (int(3 * scale), int(res[1] - 60 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
             # Speed and angle
-            if last_seen:
-                cv2.putText(frame, "Speed: " + str(int(last_seen.speed)) + " pix/frame", (int(3 * scale), int(res[1] - 34 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
-                cv2.putText(frame, "Angle: " + str(int(last_seen.angle)) + " deg", (int(3 * scale), int(res[1] - 8 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
+            if game.last_seen():
+                cv2.putText(frame, "Speed: " + str(int(game.last_seen().speed)) + " pix/frame", (int(3 * scale), int(res[1] - 34 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
+                cv2.putText(frame, "Angle: " + str(int(game.last_seen().angle)) + " deg", (int(3 * scale), int(res[1] - 8 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
 
         # Fullscreen
         cv2.namedWindow("Tracking", cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty("Tracking", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         # Display
         cv2.imshow("Tracking", frame)
-        if cv2.waitKey(actual_wait) & 0xFF == ord('q'):
-            if actual_wait > 0:
+        if cv2.waitKey(wait) & 0xFF == ord('q'):
+            if wait > 0:
                 break
 
+    game.stop()
     cv2.destroyAllWindows()
-
-
 
     # Draw "heatmap" on the first frame
     if draw_heatmap:
-        heatmap = framecopy.copy()
+        heatmap = thumbnail.copy()
         # Draw entire ball history
         first_few = 0
-        for dp in reversed(history):
-            if dp:
-                if first_few < 20:
-                    color = pink
-                    alpha = 0.7
-                else:
-                    color = yellow
-                    alpha = 0.2
-                first_few += 1
+        for dp in reversed(game.datapoints[:-1]):
+            if first_few < 20:
+                color = pink
+                alpha = 0.7
+            else:
+                color = yellow
+                alpha = 0.2
+            first_few += 1
+            temp = heatmap.copy()
+            cv2.circle(temp, dp.pos, 20, color, -1)
+            cv2.addWeighted(temp, alpha, heatmap, 1 - alpha, 0, heatmap)
+            # Also draw hits
+            if draw_hits and dp.hit:
                 temp = heatmap.copy()
-                cv2.circle(temp, dp.pos, 20, color, -1)
+                cv2.circle(temp, dp.pos, ballradius // 2, dp.hit.get_color(), -1)
+                alpha = 0.5
                 cv2.addWeighted(temp, alpha, heatmap, 1 - alpha, 0, heatmap)
-                # Also draw hits
-                if draw_hits and dp.hit:
-                    temp = heatmap.copy()
-                    cv2.circle(temp, dp.pos, ballradius // 2, dp.hit.get_color(), -1)
-                    alpha = 0.5
-                    cv2.addWeighted(temp, alpha, heatmap, 1 - alpha, 0, heatmap)
 
         # Fullscreen
         cv2.namedWindow("Heatmap", cv2.WND_PROP_FULLSCREEN)
@@ -531,6 +569,8 @@ def main(**kwargs):
         cv2.imshow("Heatmap", heatmap)
         if cv2.waitKey(0) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
+
+
 
 if __name__ == '__main__':
     # Configure ArgumentParser
@@ -547,7 +587,6 @@ if __name__ == '__main__':
     parser.add_argument("--hit-detection", action="store_true", help="turn on hit detection visualization")
     parser.add_argument("--heatmap", action="store_true", help="show a heatmap after the video is done")
     parser.add_argument("--wait", type=int, default=1, metavar="N", help="specify how long to wait on each frame")
-    parser.add_argument("--wait-on-hits", type=int, metavar="N", help="specify how long to wait on frames where a hit occurs")
     args = parser.parse_args()
 
     main(**vars(args))
