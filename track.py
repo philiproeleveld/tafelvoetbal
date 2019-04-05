@@ -1,19 +1,12 @@
 import sys
-import time
 import cv2
 import numpy as np
 import math
 import cmath
 from scipy.spatial import Delaunay
 from argparse import ArgumentParser
+import game_data
 
-# Constants
-team_black = 0
-team_white = 1
-keeper   = 0
-defense  = 1
-midfield = 2
-offense  = 3
 # BGR colors
 black        = (  0,   0,   0)
 blue         = (255,   0,   0)
@@ -30,71 +23,6 @@ lower_blue   = (100, 100, 100)
 upper_blue   = (110, 255, 255)
 lower_green  = ( 70,  70,  50)
 upper_green  = (100, 255, 150)
-
-# Datapoint class to store data about a single frame
-class datapoint:
-    # __init__() creates a dummy instance (see game_data class for more information)
-    # to store actual data about a datapoint use set_data() after initialization
-    def __init__(self):
-        self.hidden = 0
-        self.hit = None
-
-    def set_data(self, pos, speed, angle, accuracy, hull, fieldcenter):
-        self.pos = pos
-        self.speed = speed
-        self.angle = angle
-        self.accuracy = accuracy
-        self.hull = hull
-        self.fieldcenter = fieldcenter
-
-# Hit class to store data about single hits
-class hit:
-    def __init__(self, type, team=None, player=None):
-        self.type = type
-        self.team = team
-        self.player = player
-        self.goal = None
-
-    def get_color(self):
-        if self.team == team_black:
-            return black
-        elif self.team == team_white:
-            return white
-        else:
-            return red
-
-# Game class to remember data about the entire game
-class game_data:
-    def __init__(self):
-        # datapoints is a list of datapoints, the last of which is always a
-        # dummy that tracks the number of frames the ball has been hidden
-        # As soon as the ball reappears, the dummy datapoint stores that data,
-        # and a new dummy is created to take its place
-        self.datapoints = [datapoint()]
-        self.score = [0, 0]
-        self.time = 0 # Time at which the game started
-        self.duration = 0
-
-    def start(self):
-        self.time = time.time()
-
-    def stop(self):
-        self.duration = time.time() - self.time
-        self.datapoints.pop(-1)
-
-    def add_score(self, score, team):
-        self.score[team] = max(0, self.score[team] + score)
-
-    def add_dp(self):
-        self.datapoints.append(datapoint())
-
-    def last_seen(self):
-        if self.datapoints[:-1]:
-            return self.datapoints[-2]
-        return None
-
-    def is_done(self):
-        return abs(self.score[0] - self.score[1]) >= 2 and (self.score[0] >= 10 or self.score[1] >= 10)
 
 # Field class to remember the current field dimensions, and when to update this
 class field_data:
@@ -272,35 +200,35 @@ def track(frame, game, field, scaledown, hit_detection=None):
             if speed_hit or angle_hit:
                 # Outside of green area, assume a side was hit
                 if Delaunay(field.hull).find_simplex(game.last_seen().pos) < 0:
-                    new_hit = hit((speed_hit, angle_hit))
+                    new_hit = game_data.hit((speed_hit, angle_hit))
                 # Inside the field, determine which (row of) player(s) it was
                 else:
                     last_xpos = game.last_seen().pos[0]
                     if last_xpos < field.regions[0]:
-                        team = team_black
-                        player = keeper
+                        team = game_data.team_black
+                        player = game_data.keeper
                     elif last_xpos < field.regions[1]:
-                        team = team_black
-                        player = defense
+                        team = game_data.team_black
+                        player = game_data.defense
                     elif last_xpos < field.regions[2]:
-                        team = team_white
-                        player = offense
+                        team = game_data.team_white
+                        player = game_data.offense
                     elif last_xpos < field.regions[3]:
-                        team = team_black
-                        player = midfield
+                        team = game_data.team_black
+                        player = game_data.midfield
                     elif last_xpos < field.regions[4]:
-                        team = team_white
-                        player = midfield
+                        team = game_data.team_white
+                        player = game_data.midfield
                     elif last_xpos < field.regions[5]:
-                        team = team_black
-                        player = offense
+                        team = game_data.team_black
+                        player = game_data.offense
                     elif last_xpos < field.regions[6]:
-                        team = team_white
-                        player = defense
+                        team = game_data.team_white
+                        player = game_data.defense
                     else:
-                        team = team_white
-                        player = keeper
-                    new_hit = hit((speed_hit, angle_hit), team=team, player=player)
+                        team = game_data.team_white
+                        player = game_data.keeper
+                    new_hit = game_data.hit((speed_hit, angle_hit), team=team, player=player)
                 game.last_seen().hit = new_hit
 
         game.datapoints[-1].set_data(ballcenter, speed, angle, accuracy, field.hull, field.center)
@@ -335,14 +263,14 @@ def track(frame, game, field, scaledown, hit_detection=None):
                 i += 1
                 if game.datapoints[i] and game.datapoints[i].hit:
                     break
-            game.datapoints[i].hit.goal = team_white
-            if team is None or player == midfield:
+            game.datapoints[i].hit.goal = game_data.team_white
+            if team is None or player == game_data.midfield:
                 pass
-            elif player == keeper and team == team_black:
-                game.add_score(1, team_black)
-                game.add_score(-1, team_white)
+            elif player == game_data.keeper and team == game_data.team_black:
+                game.add_score(1, game_data.team_black)
+                game.add_score(-1, game_data.team_white)
             else:
-                game.add_score(1, team_black)
+                game.add_score(1, game_data.team_black)
         # Goal at the left side of the field
         elif shot < (field.regions[0] + field.regions[1]) / 2:
             for i in reversed(range(len(game.datapoints))):
@@ -362,14 +290,14 @@ def track(frame, game, field, scaledown, hit_detection=None):
                 i += 1
                 if game.datapoints[i] and game.datapoints[i].hit:
                     break
-            game.datapoints[i].hit.goal = team_black
-            if team is None or player == midfield:
+            game.datapoints[i].hit.goal = game_data.team_black
+            if team is None or player == game_data.midfield:
                 pass
-            elif player == keeper and team == team_white:
-                game.add_score(1, team_white)
-                game.add_score(-1, team_black)
+            elif player == game_data.keeper and team == game_data.team_white:
+                game.add_score(1, game_data.team_white)
+                game.add_score(-1, game_data.team_black)
             else:
-                game.add_score(1, team_white)
+                game.add_score(1, game_data.team_white)
 
     return game
 
@@ -451,7 +379,7 @@ def main(**kwargs):
     ballradius = int(10 * scale)
 
     # Variables
-    game = game_data()
+    game = game_data.game_data()
     field = field_data()
     thumbnail = None # Image of the first frame to display static images
 
@@ -498,7 +426,13 @@ def main(**kwargs):
                 # Also draw hits where applicable
                 if draw_hits and game.datapoints[i].hit:
                     temp = frame.copy()
-                    cv2.circle(temp, game.datapoints[i].pos, ballradius // 2, game.datapoints[i].hit.get_color(), -1)
+                    if game.datapoints[i].hit.team == game_data.team_black:
+                        color = black
+                    elif game.datapoints[i].hit.team == game_data.team_white:
+                        color = white
+                    else:
+                        color = red
+                    cv2.circle(temp, game.datapoints[i].pos, ballradius // 2, color, -1)
                     alpha = 0.5
                     cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
                 if draw_history:
@@ -558,7 +492,13 @@ def main(**kwargs):
             # Also draw hits
             if draw_hits and dp.hit:
                 temp = heatmap.copy()
-                cv2.circle(temp, dp.pos, ballradius // 2, dp.hit.get_color(), -1)
+                if dp.hit.team == game_data.team_black:
+                    color = black
+                elif dp.hit.team == game_data.team_white:
+                    color = white
+                else:
+                    color = red
+                cv2.circle(temp, dp.pos, ballradius // 2, color, -1)
                 alpha = 0.5
                 cv2.addWeighted(temp, alpha, heatmap, 1 - alpha, 0, heatmap)
 
