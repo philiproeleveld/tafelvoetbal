@@ -24,16 +24,6 @@ upper_blue   = (110, 255, 255)
 lower_green  = ( 70,  70,  50)
 upper_green  = (100, 255, 150)
 
-# Field class to remember the current field dimensions, and when to update this
-class field_data:
-    update_timer = 60
-    def __init__(self):
-        self.update = 0 # Recalculate field dimensions when this reaches zero
-        self.hull = None # Defines the green area of the field
-        self.center = None # Coordinates of the center of the field
-        self.goals = None # Location of the two goals based on field hull
-        self.regions = None # Regions around the player positions (e.g. keeper, midfield)
-
 # Make tracking easier by masking pixels outside the range (lower, upper)
 def mask_frame(frame, lower, upper):
     conv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -65,7 +55,7 @@ def mean_angle(angles):
 
 
 
-def track(frame, game, field, scaledown, hit_detection=None):
+def track(frame, game, scaledown, hit_detection=None):
     """
     Functional tracking code: Find the ball in the frame, storing relevant data
     inside the game and field objects.
@@ -73,7 +63,6 @@ def track(frame, game, field, scaledown, hit_detection=None):
     arguments:
     frame               frame in which to do the computations
     game                game_data instance containing all data about the ball and game
-    field               field_data instance containing the most recent field dimensions
     scaledown           factor to scale down footage by before doing calculations
 
     optional arguments:
@@ -90,7 +79,7 @@ def track(frame, game, field, scaledown, hit_detection=None):
     upper_pix_thresh = 400 * (res[0] / (640 * scaledown)) ** 2
     scaled_frame = cv2.resize(frame, (res[0] // scaledown, res[1] // scaledown))
 
-    if field.update == 0:
+    if game.update_field == 0:
         # Determine what the field looks like (without sloped/white edges)
         field_frame = mask_frame(scaled_frame, lower_green, upper_green)
         field_frame = cv2.split(field_frame)[2]
@@ -98,6 +87,7 @@ def track(frame, game, field, scaledown, hit_detection=None):
         if coords is None:
             return
         hull = cv2.convexHull(coords) * scaledown
+        field = game.new_field()
         field.hull = np.reshape(hull, (np.size(hull) // 2, 2))
         leftmost = field.hull[:, 0].min()
         rightmost = field.hull[:, 0].max()
@@ -121,12 +111,12 @@ def track(frame, game, field, scaledown, hit_detection=None):
             avg *= scaledown
             field.center = (int(avg[0]), int(avg[1]))
             # Update was successful
-            field.update += 1
+            game.update_field += 1
         else:
             # Use field hull to estimate field center
             field.center = ((leftmost + rightmost) // 2, (topmost + botmost) // 2)
             # An update is required asap
-            field.update = 0
+            game.update_field = 0
         # Field center is used to calculate regions which is a list of the 7
         # x-coords that define vertical lines that divide the 8 player regions
         field.regions = []
@@ -136,7 +126,9 @@ def track(frame, game, field, scaledown, hit_detection=None):
             field.regions.append(field.center[0] + 2*i * (rightmost - field.center[0]) // 7)
     # Recalculate after some amount of frames specified by the field_data class
     else:
-        field.update = (field.update + 1) % field_data.update_timer
+        game.update_field = (game.update_field + 1) % game.update_field_timer
+
+    field = game.curr_field()
 
     # Find ball based on color
     ball_frame = mask_frame(scaled_frame, lower_yellow, upper_yellow)
@@ -231,8 +223,8 @@ def track(frame, game, field, scaledown, hit_detection=None):
                     new_hit = game_data.hit((speed_hit, angle_hit), team=team, player=player)
                 game.last_seen().hit = new_hit
 
-        game.datapoints[-1].set_data(ballcenter, speed, angle, accuracy, field.hull, field.center)
-        game.add_dp()
+        game.datapoints[-1].set_data(ballcenter, speed, angle, accuracy, game.field_index())
+        game.new_dp()
     # Couldn't find ball
     else:
         game.datapoints[-1].hidden += 1
@@ -380,7 +372,6 @@ def main(**kwargs):
 
     # Variables
     game = game_data.game_data()
-    field = field_data()
     thumbnail = None # Image of the first frame to display static images
 
     # Loop over all frames
@@ -402,7 +393,7 @@ def main(**kwargs):
         if draw_heatmap and thumbnail is None:
             thumbnail = frame.copy()
 
-        track(frame, game, field, scaledown, hit_detection=hit_detection)
+        track(frame, game, scaledown, hit_detection=hit_detection)
 
         ###################################################################
         # End of functional code, the following is only for visualization #
@@ -438,6 +429,8 @@ def main(**kwargs):
                 if draw_history:
                     if game.datapoints[i-1]:
                         cv2.line(frame, game.datapoints[i-1].pos, game.datapoints[i].pos, pink, draw_thickness)
+
+        field = game.curr_field()
 
         # Draw field hull and player regions
         if draw_field:

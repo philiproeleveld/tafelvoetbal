@@ -7,15 +7,12 @@ The goal of this project is to automate the arbitration of foosball given the (l
 #### track.track()
 The `track.py` script contains the `track()` funciton. This function does the actual tracking, given a frame. It needs at least four arguments, as follows:
 
-`track(frame, game, field, scaledown)`
+`track(frame, game, scaledown)`
 - `frame`  
     A numpy array containing the video frame to do the calculations on (as given by openCV).
 
 - `game`  
     An instance of the `game_data` class defined in `track.py`.
-
-- `field`  
-    An instance of the `field_data` class defined in `track.py`.
 
 - `scaledown`  
     An integer specifying how much to scale down footage before doing calculations.
@@ -23,18 +20,18 @@ The `track.py` script contains the `track()` funciton. This function does the ac
 After tracking is done, be sure to call `game.stop()`. Example usage:
 ```python
 import cv2
-import track
+from game_data import game_data
+from track import track
 
 vid = cv2.VideoCapture("game.mp4")
 
-game = track.game_data()
-field = track.field_data()
+game = game_data()
 
 while True:
     ok, frame = vid.read()
     if not ok:
         break
-    track.track(frame, game, field, 1)
+    track(frame, game, 1)
 
 game.stop()
 ```
