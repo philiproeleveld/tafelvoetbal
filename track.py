@@ -85,8 +85,9 @@ def track(frame, game, scaledown, hit_detection=None):
         field_frame = cv2.split(field_frame)[2]
         coords = cv2.findNonZero(field_frame)
         if coords is None:
-            return
-        hull = cv2.convexHull(coords) * scaledown
+            hull = [[[0, res[1] // 3]], [[res[1] // 3, 0]], [[res[0] - res[1] // 3, 0]], [[res[0], res[1] // 3]], [[res[0], res[1] * 2 // 3]], [[res[0] - res[1] // 3, res[1]]], [[res[1] // 3, res[1]]], [[0, res[1] * 2 // 3]]]
+        else:
+            hull = cv2.convexHull(coords) * scaledown
         field = game.new_field()
         field.hull = np.reshape(hull, (np.size(hull) // 2, 2))
         leftmost = field.hull[:, 0].min()
