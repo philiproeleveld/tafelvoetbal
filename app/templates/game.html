@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Streaming Video Recorder</title>
+
+  <!-- Latest compiled and minified CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+   <!--Custom CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <!-- JQuery 3.3.1 -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <!-- Latest compiled and minified JavaScript -->
+  <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}" ></script>
+</head>
+
+<body>
+<!-- Outer container -->
+<div class="container-fluid outer-wrapper">
+
+  <div class="row">
+
+     <!-- Video container -->
+     <div class="col-sm-7" id="video-container">
+       <img id="video" src="{{ url_for('video_viewer') }}" class="img-responsive">
+     </div>
+
+     <!-- Container for match statistics -->
+     <div class="col-sm-5" id="stats-container">
+
+       <!-- Random row -->
+       <div class="row scoreboard">
+         <div class="col-sm-12 score-banner">
+            <h1>Score</h1>
+         </div>
+         <div class="col-sm-6 score-element" id="left-score">
+             <h2 id="scorewhite">0</h2>
+         </div>
+         <div class="col-sm-6 score-element" id="right-score">
+             <h2 id="scoreblack">0</h2>
+         </div>
+         <div class="col-sm-12 score-banner">
+           <h1>Speeltijd</h1>
+         </div>
+         <div class="col-sm-12 score-element">
+           <h2 id="clock">0m0s</h2>
+         </div>
+       </div>
+
+     </div>
+
+   <!---->
+   </div>
+
+   <!--<form action="{{ url_for('index_redirect') }}" method="post" id="stop-game">-->
+   </form>
+
+
+<!---->
+</div>
+
+<script>
+  // get the elements for displaying data to
+  var clock = document.getElementById('clock');
+  var score_white = document.getElementById('scorewhite');
+  var score_black = document.getElementById('scoreblack');
+
+  // open request
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', '{{ url_for('game_update') }}' );
+  xhr.send();
+  var position = 0;
+
+  function handleNewData() {
+    var messages = xhr.responseText.split('\n');
+    messages.slice(position, -1).forEach(function(value) {
+
+       var splitted = value.split(" ")
+       clock.textContent = splitted[0]
+       score_white.textContent = splitted[1]
+       score_black.textContent = splitted[2]
+    })
+    position = messages.length - 1
+  }
+
+  var timer;
+  timer = setInterval(function() {
+    handleNewData();
+    }, 1000);
+
+  window.setInterval(function()
+  {
+    console.log(score_white.innerHTML)
+    if ((Number(score_white.innerHTML) == 5) || (Number(score_black.innerHTML) == 5)) {
+      $('#stop-game').submit();
+    }
+  }, 1000);
+</script>
+
+</body>
+</html>

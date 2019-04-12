@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <!-- Jquery 3.3.1 -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <!-- Popper.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js" integrity="sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4" crossorigin="anonymous"></script>
+    <!-- Latest compiled and minified JavaScript -->
+    <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}" ></script>
+
+</head>
+
+<body>
+
+<!-- Form posts all -->
+<form action="{{ url_for('handle_login') }}" method="post" id="login-form">
+<div class="row login">
+
+     <!-- White login container -->
+     <div class="col-sm-6 login-white">
+        <h2>Team Wit</h2>
+        <h3>Voor</h3>
+
+        <div class="dropdown">
+            <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
+            <input type="hidden" class="hidden-form" name="wit_voor" value="NAAM"/>
+            <div class="dropdown-menu" aria-labelledby="dropdown_coins">
+                <form class="px-4 py-2">
+                    <input type="search" class="form-control" placeholder="Naam" autofocus="autofocus">
+                </form>
+                <div class="menuItems" id="wit-voor"></div>
+                <div class="dropdown-header empty">Geen naam gevonden</div>
+            </div>
+        </div>
+
+        <h3>Achter</h3>
+        <div class="dropdown">
+            <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
+            <input type="hidden" class="hidden-form" name="wit_achter" value="Naam"/>
+            <div class="dropdown-menu" aria-labelledby="dropdown_coins">
+                <form class="px-4 py-2">
+                    <input type="search" class="form-control " placeholder="Naam" autofocus="autofocus">
+                </form>
+                <div class="menuItems" id="wit-achter"></div>
+                <div class="dropdown-header empty">Geen naam gevonden</div>
+            </div>
+        </div>
+     </div>
+     <!---->
+
+    <!-- Black login container -->
+    <div class="col-sm-6 login-black">
+
+        <h2>Team Zwart</h2>
+        <h3>Voor</h3>
+
+        <div class="dropdown">
+            <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
+            <input type="hidden" class="hidden-form" name="zwart_voor" value="Naam"/>
+            <div class="dropdown-menu" aria-labelledby="dropdown_coins">
+                <form class="px-4 py-2">
+                    <input type="search" class="form-control search" placeholder="Naam" autofocus="autofocus">
+                </form>
+                <div class="menuItems" id="zwart-voor"></div>
+                <div class="dropdown-header empty">Geen naam gevonden</div>
+            </div>
+        </div>
+
+        <h3>Achter</h3>
+        <div class="dropdown">
+            <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
+            <input type="hidden" class="hidden-form" name="zwart_achter" value="s"/>
+            <div id="menu" class="dropdown-menu" aria-labelledby="dropdown_coins">
+                <form class="px-4 py-2">
+                    <input type="search" class="form-control search" placeholder="Naam" autofocus="autofocus">
+                </form>
+                <div class="menuItems" id="zwart-achter"></div>
+                <div class="dropdown-header empty">Geen naam gevonden</div>
+            </div>
+        </div>
+
+        <!-- Handles POST request to server for login -->
+        <div class="login-register">
+            <button class="btn btn-primary login-button" type="submit" form="login-form" value="Submit">Start spel</button>
+            <a href="register" id="register-link">Of registreer</a>
+        </div>
+        <!---->
+
+    </div>
+    <!-- -->
+
+    <!-- Holder for login alerts -->
+    <div class="col-sm-12 alert-holder">
+        {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    {% for message in messages %}
+                    <div class="alert alert-danger" id="alert-login">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+        {% endwith %}
+    </div>
+    <!-- -->
+
+</div>
+<!-- -->
+
+</form>
+
+<script>
+    let names = {{db_names|safe}}
+</script>
+<script type="text/javascript" src="{{ url_for('static', filename='js/login.js') }}"></script>
+<script>
+    // Dictionary for saving current name selected for each dropdown menu
+    let taken_dict  = {}
+
+    // Function updates the taken_dict when a dropdown-item is clicked for corresponding dropdown menu
+    $('.dropdown-item').on('click', function() {
+
+    // Get id of menu and name that is selected in it
+    let menu_id = $(this).parent().attr('id')
+    let clicked_name = $(this)[0].value
+
+    if (taken_dict[menu_id] == undefined) {
+
+        // Add this menu/name pair to dictionary if no key/value pair for specified menu id
+        taken_dict[menu_id] = clicked_name
+
+    } else {
+
+        let current_name = taken_dict[menu_id]
+
+        // Show name currently saved for menu id in taken_dict in all menus again
+        $('input:button').each(function () {
+            if ($(this).val() == current_name) {
+                $(this).show()
+            }
+        })
+
+        // Update the name for menu id in taken dictionary
+        taken_dict[menu_id] = clicked_name
+    }
+
+    // Hide the clicked element in all menus upon clicking
+    $('input:button').each(function() {
+        if ($(this).val() == clicked_name) {
+            $(this).hide()
+        }});
+    });
+</script>
+</body>
+
+</html>
