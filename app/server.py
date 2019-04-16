@@ -4,6 +4,8 @@ import numpy as np
 import MySQLdb
 import time
 import json
+from os import sys, path
+sys.path.append(path.dirname(path.dirname(path.abspath(__file__))) + "\\track")
 from track import track
 from game_data import game_data
 
@@ -190,7 +192,7 @@ def video_stream():
 
     # Start videocapture
     if video_camera == None:
-        video_camera = cv2.VideoCapture("game.mp4")
+        video_camera = cv2.VideoCapture(path.dirname(path.dirname(path.abspath(__file__))) + "\\data\\game.mp4")
 
     # Keep running until game_running == False
     while game_running:
@@ -225,7 +227,7 @@ def video_stream():
 
             prev = 0
             for field_index, field in enumerate(game.fields):
-                hull = json.dumps(field.hull.tolist())
+                hull = field.hull_to_string()
                 cur.execute("INSERT INTO Hulls (Hull) VALUES ('{}')".format(hull))
                 hullid = cur.lastrowid
 
@@ -237,8 +239,6 @@ def video_stream():
                         angle = dp.angle
                         accuracy = dp.accuracy
 
-                        # TODO: VOOR HIT FUNCTIE AANROEPENEN VOOR INSERTIE DATABASE
-
                         if accuracy == 1:
                             accuracy = 0.999
 
@@ -246,7 +246,7 @@ def video_stream():
                             cur.execute(
                                 "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy,"
                                 "HitType) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})".format(
-                                    frame_no, game_id, hullid, x_pos, y_pos, speed, angle, accuracy, 1))
+                                    frame_no, game_id, hullid, x_pos, y_pos, speed, angle, accuracy, dp.hit.to_int()))
                         else:
                             cur.execute(
                                 "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy)"

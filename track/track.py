@@ -241,7 +241,7 @@ def track(frame, game, scaledown, hit_detection=None):
         if shot > (field.regions[-1] + field.regions[-2]) / 2:
             for i in reversed(range(len(game.datapoints))):
                 dp = game.datapoints[i]
-                if dp and dp.hit:
+                if dp.hit:
                     if dp.speed < 20:
                         slowframes += 1
                         if slowframes == 5:
@@ -252,10 +252,9 @@ def track(frame, game, scaledown, hit_detection=None):
                         player = dp.hit.player
                     else:
                         break
-            while True:
+            i += 1
+            while not game.datapoints[i].hit:
                 i += 1
-                if game.datapoints[i] and game.datapoints[i].hit:
-                    break
             game.datapoints[i].hit.goal = game_data.team_white
             if team is None or player == game_data.midfield:
                 pass
@@ -268,7 +267,7 @@ def track(frame, game, scaledown, hit_detection=None):
         elif shot < (field.regions[0] + field.regions[1]) / 2:
             for i in reversed(range(len(game.datapoints))):
                 dp = game.datapoints[i]
-                if dp and dp.hit:
+                if dp.hit:
                     if dp.speed < 20:
                         slowframes += 1
                         if slowframes == 5:
@@ -279,10 +278,9 @@ def track(frame, game, scaledown, hit_detection=None):
                         player = dp.hit.player
                     else:
                         break
-            while True:
+            i += 1
+            while not game.datapoints[i].hit:
                 i += 1
-                if game.datapoints[i] and game.datapoints[i].hit:
-                    break
             game.datapoints[i].hit.goal = game_data.team_black
             if team is None or player == game_data.midfield:
                 pass

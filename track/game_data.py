@@ -16,13 +16,45 @@ class field_data:
         self.goals = None # Location of the two goals based on field hull
         self.regions = None # Regions around the player positions (e.g. keeper, midfield)
 
+    def hull_to_string(self):
+        return json.dumps(self.hull.tolist())
+
 # Hit class to store data about single hits
 class hit:
-    def __init__(self, type, team=None, player=None):
-        self.type = type
+    def __init__(self, type, team=None, player=None, goal=None):
+        self.type = type # of type (speed_hit, angle_hit) both booleans
         self.team = team
         self.player = player
-        self.goal = None
+        self.goal = goal
+        # self.goal is equal to either team_white or team_black if not None
+        # meaning which goal the ball entered, *not* which team gains points
+
+    # The values of the object are encoded as an integer as follows:
+    # team -> 0 or 1; encoding black/white
+    # type, player -> 00/01/10/11;
+    # encoding (False, False)/(True, False)/(False, True)/(True, True)
+    # or keeper/defense/midfield/offense, respectively.
+    # goal -> 00/01/10; encoding black goal/white goal/neither
+    # the resulting bits are then concatenated to create an integer between
+    # 0 and 95 (incl.)
+    # NOTE: the conversion to binary is actually skipped as the resulting
+    # integer can just be calculated directly
+    def to_int(self):
+        value = int(self.type[0]) + 2*int(self.type[1]) + 4*self.team + 8*self.player
+        if self.goal is not None:
+            return value + 32*self.goal
+        return value + 64
+
+    # Decode an integer between 0 and 95 (incl.) to a hit object
+    # (see comments on to_int() above)
+    def from_int(value):
+        if value > 95 or value < 0:
+            return None
+        if (value >> 6) % 2 == 1:
+            goal = None
+        else:
+            goal = (value >> 5) % 2
+        return hit(type=(value % 2 == 1, (value >> 1) % 2 == 1), team=(value >> 2) % 2, player=(value >> 3) % 4, goal=goal)
 
 # Datapoint class to store data about a single frame
 class datapoint:
