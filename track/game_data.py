@@ -16,6 +16,11 @@ class field_data:
         self.goals = None # Location of the two goals based on field hull
         self.regions = None # Regions around the player positions (e.g. keeper, midfield)
 
+    # Make hull coordinates relative to the field center at that time
+    def relativize_hull(self):
+        self.hull = [(coord[0] - self.center[0], coord[1] - self.center[1]) for coord in self.hull]
+
+    # Returns a JSON formatted string
     def hull_to_string(self):
         return json.dumps(self.hull.tolist())
 
@@ -71,6 +76,10 @@ class datapoint:
         self.accuracy = accuracy
         self.field_index = field_index
 
+    # Make position relative to a given field center
+    def relativize_pos(self, center):
+        self.pos = (self.pos[0] - center[0], self.pos[1] - center[1])
+
 # Game class to remember data about the entire game
 class game_data:
     # Recalculate field dimensions every N frames
@@ -97,6 +106,18 @@ class game_data:
     def stop(self):
         self.duration = time.time() - self.time
         self.datapoints.pop(-1)
+        self.relativize()
+
+    # Make all xy coordinates relative to the field center at that time
+    def relativize(self):
+        prev = 0
+        for field_index, field in enumerate(self.fields):
+            field.relativize_hull()
+            for frame_no, dp in enumerate(self.datapoints[prev:]):
+                if dp.field_index != field_index:
+                    break
+                dp.relativize_pos(field.center)
+            prev += frame_no
 
     def add_score(self, score, team):
         self.score[team] = max(0, self.score[team] + score)

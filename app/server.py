@@ -258,7 +258,7 @@ def video_stream():
                     else:
                         break
 
-                prev = frame_no
+                prev += frame_no
 
             # Set relevant globals to None for next game
             video_camera = None
