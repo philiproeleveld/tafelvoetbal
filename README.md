@@ -90,3 +90,21 @@ A complete list of optional flags is as follows:
 ### Sample Footage
 
 Some sample footage is included in this repository. It can be found in the `data` folder. The video file `game.mp4` is an excerpt of a game. The footage contains some gameplay and ends shortly after a single goal is made. Since the footage is quite long, `game_short.mp4` is included as well. This video contains only the last twenty seconds of `game.mp4` in which the goal is made. However, `game_short.mp4` has horizontally flipped the footage of `game.mp4`, so be sure to use the `--flip` flag to flip it back if desired.
+
+#### server.py
+This script launches the Flask web-application. To launch the application, run `python server.py` in a terminal.
+
+Within the app, there are three web pages:
+- `index.html`
+   Which is the landing page that enables players to start a game.
+
+- `register.html`
+   Which enables new players to register. Submitting the form on this page results in adding the player to the Players table and redirection to index.html.
+   
+- `game.html`
+   Which shows a scoreboard and the total time of the game to the players.
+   
+When a game is started, a new `game_data` object instance is initialized. The
+object is updated by using the `track()` function as described above for as long as the game runs.
+After the game is finished, data in the `game_data` object is written to the MySQL database, after which the object is
+deleted and the app is redirected to index.html, which allows for starting of a new game.

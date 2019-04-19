@@ -44,8 +44,8 @@ create table if not exists Datapoints (
     YCoord smallint,
     Speed float(53),
     Angle decimal(19,16),
-    Accuracy decimal(19,19),
-    HitType tinyint default 0,
+    Accuracy decimal(19,18),
+    HitType smallint default 0,
     foreign key (GameID) references Games(ID),
     foreign key (HullID) references Hulls(ID)
 );

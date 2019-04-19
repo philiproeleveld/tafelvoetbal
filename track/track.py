@@ -254,7 +254,7 @@ def track(frame, game, scaledown, hit_detection=None):
                         break
             i += 1
             while not game.datapoints[i].hit:
-                i += 1
+                i -= 1
             game.datapoints[i].hit.goal = game_data.team_white
             if team is None or player == game_data.midfield:
                 pass
@@ -277,10 +277,11 @@ def track(frame, game, scaledown, hit_detection=None):
                         team = dp.hit.team
                         player = dp.hit.player
                     else:
+
                         break
             i += 1
             while not game.datapoints[i].hit:
-                i += 1
+                i -= 1
             game.datapoints[i].hit.goal = game_data.team_black
             if team is None or player == game_data.midfield:
                 pass

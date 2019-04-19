@@ -29,7 +29,7 @@
 
         <div class="dropdown">
             <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
-            <input type="hidden" class="hidden-form" name="wit_voor" value="NAAM"/>
+            <input type="hidden" class="hidden-form" name="wit_voor" value="Naam"/>
             <div class="dropdown-menu" aria-labelledby="dropdown_coins">
                 <form class="px-4 py-2">
                     <input type="search" class="form-control" placeholder="Naam" autofocus="autofocus">
@@ -75,7 +75,7 @@
         <h3>Achter</h3>
         <div class="dropdown">
             <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
-            <input type="hidden" class="hidden-form" name="zwart_achter" value="s"/>
+            <input type="hidden" class="hidden-form" name="zwart_achter" value="Naam"/>
             <div id="menu" class="dropdown-menu" aria-labelledby="dropdown_coins">
                 <form class="px-4 py-2">
                     <input type="search" class="form-control search" placeholder="Naam" autofocus="autofocus">
@@ -96,7 +96,7 @@
     <!-- -->
 
     <!-- Holder for login alerts -->
-    <div class="col-sm-12 alert-holder">
+    <div class="col-sm-12 alert-holder border-top-0">
         {% with messages = get_flashed_messages() %}
                 {% if messages %}
                     {% for message in messages %}
@@ -153,6 +153,7 @@
             $(this).hide()
         }});
     });
+
 </script>
 </body>
 

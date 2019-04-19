@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Streaming Video Recorder</title>
-
+  <title>Game page</title>
   <!-- Latest compiled and minified CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
    <!--Custom CSS -->
@@ -11,24 +10,16 @@
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
   <!-- Latest compiled and minified JavaScript -->
   <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}" ></script>
+
 </head>
 
 <body>
+
 <!-- Outer container -->
 <div class="container-fluid outer-wrapper">
 
-  <div class="row">
-
-     <!-- Video container -->
-     <div class="col-sm-7" id="video-container">
-       <img id="video" src="{{ url_for('video_viewer') }}" class="img-responsive">
-     </div>
-
-     <!-- Container for match statistics -->
-     <div class="col-sm-5" id="stats-container">
-
        <!-- Random row -->
-       <div class="row scoreboard">
+    <div class="row scoreboard">
          <div class="col-sm-12 score-banner">
             <h1>Score</h1>
          </div>
@@ -44,22 +35,28 @@
          <div class="col-sm-12 score-element">
            <h2 id="clock">0m0s</h2>
          </div>
-       </div>
-
-     </div>
-
-   <!---->
+         <div class="col-sm-12 score-change">
+             <div class="btn-group score-buttons" role="group" aria-label="Basic example">
+              <button type="button" class="btn btn-secondary change-score">Laatste doelpunt ongeldig</button>
+              <button type="button" class="btn btn-secondary increase-white">Wit gescoord</button>
+              <button type="button" class="btn btn-secondary increase-black">Zwart gescoord</button>
+            </div>
+         </div>
    </div>
 
-   <!--<form action="{{ url_for('index_redirect') }}" method="post" id="stop-game">-->
-   </form>
-
+   <!-- This form is submitted when game is finished to render login page -->
+   <form action="{{ url_for('login_redirect') }}" method="post" id="stop-game"></form>
 
 <!---->
 </div>
 
+<!-- Form used for adjusting the  -->
+<form action="{{ url_for('adjust_score') }}" method="post" id="adjust-score">
+    <input type="hidden" class="form-control" id="adjust-team" name="team_to_adjust">
+</form>
+
 <script>
-  // get the elements for displaying data to
+  // Get the elements for displaying data to
   var clock = document.getElementById('clock');
   var score_white = document.getElementById('scorewhite');
   var score_black = document.getElementById('scoreblack');
@@ -83,17 +80,49 @@
   }
 
   var timer;
+  var changed_score_team;
+  var previous_score_white = 0;
+  var previous_score_black = 0;
+
   timer = setInterval(function() {
     handleNewData();
-    }, 1000);
 
-  window.setInterval(function()
-  {
-    console.log(score_white.innerHTML)
-    if ((Number(score_white.innerHTML) == 5) || (Number(score_black.innerHTML) == 5)) {
-      $('#stop-game').submit();
+    // Check if scores changed with respect to previous interval
+    if (Number(score_white.innerHTML) > previous_score_white) {
+        previous_score_white = Number(score_white.innerHTML)
+        changed_score_team = 'white';
     }
+
+     if (Number(score_black.innerHTML) > previous_score_black) {
+        previous_score_black = Number(score_black.innerHTML)
+        changed_score_team = 'black';
+    }
+
+    // Automatically check if the game is finished every second and submit render login form
+    if ((Number(score_white.innerHTML) >= 3) || (Number(score_black.innerHTML) >= 3)){
+        console.log(Math.abs(Number(score_white.innerHTML) - Number(score_black.innerHTML)))
+        if (Math.abs(Number(score_white.innerHTML) - Number(score_black.innerHTML)) >= 2) {
+            $('#stop-game').submit();
+        }
+    }
+
   }, 1000);
+
+  // Decrease the last score if user chooses to in-game
+  $('.change-score').click(function() {
+    $('#adjust-score').submit();
+  })
+
+    // Increase score of either team if a user chooses to in-game
+  $('.increase-black').click(function() {
+    $('#adjust-team').val('increase_black');
+    $('#adjust-score').submit();
+  })
+
+  $('.increase-white').click(function() {
+    $('#adjust-team').val('increase_white');
+    $('#adjust-score').submit();
+  })
 </script>
 
 </body>

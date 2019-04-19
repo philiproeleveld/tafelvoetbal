@@ -1,11 +1,20 @@
 from flask import Flask, render_template, redirect, request, flash, url_for
 import cv2
-import numpy as np
 import MySQLdb
 import time
-import json
 from os import sys, path
-sys.path.append(path.dirname(path.dirname(path.abspath(__file__))) + "\\track")
+
+repo = path.dirname(path.dirname(path.abspath(__file__)))
+if repo.find('/') == -1:
+    track_dir = repo + "\\track"
+    video_file = repo + "\\data\\game.mp4"
+else:
+    track_dir = repo + "/track"
+    video_file = repo + "/data/game.mp4"
+
+sys.path.append(path.dirname(path.dirname(path.abspath(__file__))) + "/track")
+
+from datetime import timedelta
 from track import track
 from game_data import game_data
 
@@ -15,26 +24,26 @@ app.secret_key = 'cookie'
 # Setup database connection
 db = MySQLdb.connect(host="localhost",
                      user="root",
-                     passwd="DigitalPower01",
+                     passwd="password",
                      db="Tafelvoetbal")
 
 cur = db.cursor()
 
-# GAME GLOBALS (set to None or overwritten for each new game)
-wit_voor = None
-wit_achter = None
-zwart_voor = None
-zwart_achter = None
-witvoor_ID = None
-witachter_ID = None
-zwartvoor_ID = None
-zwartachter_ID = None
-start_time = None
-duration = None
-score = [0, 0]
-video_camera = None
-game = None # Contains the game data
-game_running = False # True if there is currently a game being played
+# GAME GLOBALS (set to None or overwritten at start of each new game)
+wit_voor = None         # Username player in the front (white)
+wit_achter = None       # Username player in the back (white)
+zwart_voor = None       # Username player in the front (black)
+zwart_achter = None     # Username player in the back (black)
+witvoor_ID = None       # ID player in the front (white)
+witachter_ID = None     # ID player in the back (white)
+zwartvoor_ID = None     # ID player in the front (black)
+zwartachter_ID = None   # ID player in the back (black)
+video_camera = None     # Used for storing cv2 VideoCapture object
+last_scored = None      # Keeps track of last scoring team, as to disqualify goal if player chooses so
+game = None             # Contains the game data
+game_running = False    # True if there is currently a game being played
+m = None                # m stores minutes of playing time
+s = None                # s stores seconds of playing time
 
 # Render the three web templates
 @app.route('/')
@@ -53,8 +62,9 @@ def login():
 def register():
     return render_template('register.html')
 
-@app.route('/index_redirect', methods=['POST'])
-def index_redirect():
+# Redirects to login after a game is finished (requested client-side in game.html)
+@app.route('/', methods=['POST'])
+def login_redirect():
     # Login page includes all current usernames in database
     cur.execute("SELECT Username FROM Players")
     all_usernames = [row[0] for row in cur.fetchall()]
@@ -65,16 +75,16 @@ def index_redirect():
 def handle_register():
     """
     Handles registration of users when the register button is clicked in register.html.
-    It flashes an error on the registration webpage when the requirements are not met, and
-    writes the registration to MySQL database (table: Players) when the requirements for registration
+    It flashes an error on the registration page if the requirements are not met, and
+    writes the registration to the MySQL database (table: Players) when the requirements for registration
     are met, after which the login-page template is rendered.
 
     returns:
     redirect(url_for('register'))                           if requirements for registration are not met
-    render_template('index.html', db_names=all_usernames)   if requirements are met
+    render_template('index.html', db_names=all_usernames)   if requirements for registration are met
     """
 
-    # Acquire form variables from filled in register.html
+    # Acquire form variables from register.html
     username = request.form['username']
     name = request.form['name']
     surname = request.form['surname']
@@ -98,12 +108,12 @@ def handle_register():
     elif int(age) < 18:
         error = 'Leeftijd mag niet lager zijn dan 18'
 
-    # Flash message on register page to user when there is an error
+    # Flash message on register page to user if register form is not filled in correctly
     if 'error' in locals():
         flash(error)
         return redirect(url_for('register'))
 
-    # Else write register data to SQL database and return to login page
+    # Write register data to SQL database and return to the login page when registration is legitimate
     else:
         if len(name) == 0 and len(surname) > 0:
             cur.execute("INSERT INTO Players (Username, LastName, Age, Gender, Occupation) VALUES ('{}', '{}', {}, '{}', '{}')".format(
@@ -120,42 +130,45 @@ def handle_register():
 
         db.commit()
 
-        # Create username list to pass login page for selector buttons
+        # Retrieve username list to pass to login page for filling selector buttons
         query = cur.execute("SELECT Username FROM Players")
         all_usernames = [row[0] for row in cur.fetchall()]
 
         return render_template('index.html', db_names=all_usernames)
 
-@app.route('/handle_login', methods=['POST'])
+@app.route('/game', methods=['POST'])
 def handle_login():
    """
    Handles the start of a game when login button is clicked in index.html. Upon start of the game
-   the user-ID's that match to the usernames are retrieved from the MySQL database (table: Players) and
-   are saved in the global environment. After this, game.html is rendered. When this template is rendered,
-   the video_viewer() and game_update() functions are also triggered. The global variable 'game_running' is set to
-   True upon login, which keeps running these two functions until it is set to False upon finishing the game.
+   the user ID's that match to the selected usernames are retrieved from the MySQL database (table: Players) and
+   are saved into global variables. After this, game.html is rendered. When this template is rendered,
+   the update_dashboard() function is also triggered. Besides, the global variable 'game_running' is set to
+   True upon, which assures that the updating function keeps running until it is set to False upon
+   finishing the game.
 
    returns:
    return render_template('game.html')
    """
+
+   # Form variables
    wit_voor = request.form['wit_voor']
    wit_achter = request.form['wit_achter']
    zwart_voor = request.form['zwart_voor']
    zwart_achter = request.form['zwart_achter']
 
-   # Gets corresponding user ID' for a selected username for a game
+   # Gets corresponding user ID for a selected username
    def get_ID(username):
        cur.execute("SELECT ID FROM Players WHERE username = %s", (username,))
        ID = cur.fetchone()[0]
        return int(ID)
 
-   # Warn user if not all required names are selected
+   # Warn user if the required fields are not filled
    if wit_voor == 'Naam' or wit_achter == 'Naam' or zwart_achter == 'Naam' or zwart_voor == 'Naam':
        flash('Selecteer voor iedere positie een speler')
        return redirect(url_for('index'))
 
    else:
-       # Get ID's corresponding to the selected usernames
+       # Get player ID's corresponding to the selected usernames
        global witvoor_ID
        global witachter_ID
        global zwartvoor_ID
@@ -165,142 +178,191 @@ def handle_login():
        zwartvoor_ID = get_ID(zwart_voor)
        zwartachter_ID = get_ID(zwart_achter)
 
-       # Initialize timer, game, and game_running variable
-       global start_time
+       # Initialize timer, game, and game_running
        global game
        global game_running
 
        game = game_data()
        game.start()
-       start_time = game.time
        game_running = True
 
        return render_template('game.html')
 
-def video_stream():
-    """
-    Responsible for streaming live video from webcam to game.html. The function is wrapped inside of
-    app.response_class which actually enables the live-streaming of the video. All tracking and updating of
-    the global game_data() object also happens within this function. After a game is finished,
-    relevant game data is written to the MySQL database and relevant global variables are set to None so
-    the next game can be started.
-    """
-    global video_camera
-    global score
-    global start_time
+@app.route('/adjust_score', methods=['POST'])
+def adjust_score():
+    '''
+    Responsible for adjusting score when player requests to do so in game.html. If the increase
+    variable passed from the POST request equals 'increase_white' or 'increase_black', the relevant score
+    is increased. Otherwise, the team that last scored gets a decrease of 1 on its score.
+
+    returns:
+    return redirect(url_for('login'))
+    '''
+
+    global game
+    global last_scored
     global game_running
 
-    # Start videocapture
-    if video_camera == None:
-        video_camera = cv2.VideoCapture(path.dirname(path.dirname(path.abspath(__file__))) + "\\data\\game.mp4")
+    increase = request.form['team_to_adjust']
 
-    # Keep running until game_running == False
-    while game_running:
-        global game
-        ok, frame = video_camera.read()
+    if increase:
 
-        # Mock scoring update
-        score_black, score_white = np.random.choice([0, 1], 1, p=[0.95, 0.05]), np.random.choice([0, 1], 1, p=[0.95, 0.05])
-        score[0] += score_black[0]
-        score[1] += score_white[0]
-
-        if score[0] == 5 or score[1] == 5:
-
-            # Stop game and yield last frame
-            game.stop()
-            game_running = False
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + global_frame + b'\r\n\r\n')
-
-            # Convert starttime to right format
-            db_starttime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))
-
-            # Write game data to MySQL database (Table: Games)
-            cur.execute("INSERT INTO Games (PlayerID_Black1, PlayerID_Black2, PlayerID_White1, PlayerID_White2,"
-                        "StartTime, Duration, ScoreWhite, ScoreBlack) VALUES ({}, {}, {}, {}, '{}', '{}', {}, {})".format(
-                        zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID, db_starttime, game.duration, score[1], score[0]))
-            db.commit()
-
-            # Fetch current game_ID
-            cur.execute("SELECT ID FROM Games ORDER BY ID DESC LIMIT 1")
-            game_id = cur.fetchone()[0]
-
-            prev = 0
-            for field_index, field in enumerate(game.fields):
-                hull = field.hull_to_string()
-                cur.execute("INSERT INTO Hulls (Hull) VALUES ('{}')".format(hull))
-                hullid = cur.lastrowid
-
-                for frame_no, dp in enumerate(game.datapoints[prev:]):
-                    if dp.field_index == field_index:
-                        x_pos = dp.pos[0]
-                        y_pos = dp.pos[1]
-                        speed = dp.speed
-                        angle = dp.angle
-                        accuracy = dp.accuracy
-
-                        if accuracy == 1:
-                            accuracy = 0.999
-
-                        if dp.hit:
-                            cur.execute(
-                                "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy,"
-                                "HitType) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})".format(
-                                    frame_no, game_id, hullid, x_pos, y_pos, speed, angle, accuracy, dp.hit.to_int()))
-                        else:
-                            cur.execute(
-                                "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy)"
-                                "VALUES ({}, {}, {}, {}, {}, {}, {}, {})".format(
-                                    frame_no, game_id, hullid, x_pos, y_pos, speed, angle, accuracy))
-
-                        db.commit()
-
-                    else:
+        # Find the last hit made by team specified in 'increase' in datapoints list and update score/hit
+        for idx, dp in reversed(list(enumerate(game.datapoints))):
+            if dp.hit is None:
+                continue
+            else:
+                if increase == 'increase_white':
+                    if dp.hit.team == 1: # White hit
+                        game.datapoints[idx].hit.goal = 0
+                        game.score[0] += 1
                         break
 
-                prev += frame_no
+                elif increase == 'increase_black':
+                    if dp.hit.team == 0: # Black hit
+                        game.datapoints[idx].hit.goal = 1
+                        game.score[1] += 1
+                        break
 
-            # Set relevant globals to None for next game
-            video_camera = None
-            print("Game finished!")
+    else:
+        if last_scored == 'white':
+            game.score[0] -= 1
+        elif last_scored == 'black':
+            game.score[1] -= 1
 
-        # If the game is not finished, keep tracking and streaming frames to webpage
-        if ok:
-            _, jpeg = cv2.imencode('.jpg', frame)
-            global_frame = jpeg.tobytes()
-            jpeg = jpeg.tobytes()
-            track(frame, game, 1)
+        # Find the last hit in datapoints list and set self.goal to None for this datapoint
+        for idx, dp in reversed(list(enumerate(game.datapoints))):
+            if dp.hit is None:
+                continue
+            else:
+                if dp.hit.goal:
+                    game.datapoints[idx].goal = None
+                    break
 
-            yield (b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' + jpeg + b'\r\n\r\n')
-
-@app.route('/video_viewer')
-def video_viewer():
-    return app.response_class(video_stream(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+    return redirect(url_for('login'))
 
 def update_dashboard():
     """
-    Updates the scores and timer in game.html. The function is wrapped inside of
-    app.response_class().
+    Updates the scores and timer in game.html for the duration of one game. The function is wrapped inside of
+    app.response_class(). Within the function, new video-frames are continuously generated from a live-feed
+    which are processed in the track() function. After requirements are met for finishing a game, the game is stopped
+    and relevant data is written to the MySQL database. After this, a new game can be started.
     """
-    global start_time
-    global score
-    one_more = True
 
-    # Two while loops have to be used to display right score on scoreboard after game completion
+    global video_camera
+    global game_running
+    global last_scored
+    global game
+
+    one_more = True     # Used to show last frame
+    prev_black = 0      # Keeps track of last score black
+    prev_white = 0      # Keeps track of last score white
+
+    # Start videocapture
+    if video_camera == None:
+        video_camera = cv2.VideoCapture(video_file)
+        # video_camera = cv2.VideoCapture(0)
+
+    # Keep running until game_running == False
     while one_more:
+        time.sleep(1)
         while game_running:
+            ok, frame = video_camera.read()
 
-            # Calculate current time and yield to webpage
-            seconds = time.time() - start_time
-            m, s = divmod(seconds, 60)
-            h, m = divmod(m, 60)
+            # Mock scoring update, uncomment when using video file for testing purposes
+            # score_black, score_white = np.random.choice([0, 1], 1, p=[0.99, 0.01]), np.random.choice([0, 1], 1, p=[0.99, 0.01])
+            # game.score[0] += score_black[0]
+            # game.score[1] += score_white[0]
 
-            yield('{:.0f}m{:.0f}s {} {}\n'.format(m, s, score[0], score[1]))
+            # Determine the last scoring team (for score adjustment purposes)
+            if game.score[0] > prev_white:
+                prev_white = game.score[1]
+                last_scored = 'white'
 
-        # One more loop after game_running has turned to False
-        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, score[0], score[1]))
+            elif game.score[1] > prev_black:
+                prev_black = game.score[0]
+                last_scored = 'black'
+
+            # Stop game if there is a score of 10 or higher and there is a difference of 2
+            if game.score[0] >= 3 or game.score[1] >= 3:
+                if abs(game.score[0] - game.score[1]) >= 2:
+
+                    # Stop game and yield last frame
+                    game.stop()
+                    game_running = False
+
+                    # Convert start time and duration to right format
+                    db_starttime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(game.time))
+                    duration = str(timedelta(seconds=int(game.duration)))
+
+                    # Write game data to MySQL database (Table: Games)
+                    cur.execute("INSERT INTO Games (PlayerID_Black1, PlayerID_Black2, PlayerID_White1, PlayerID_White2,"
+                                "StartTime, Duration, ScoreWhite, ScoreBlack) VALUES ({}, {}, {}, {}, '{}', '{}', {}, {})".format(
+                        zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID, db_starttime, duration, game.score[0],
+                        game.score[1]))
+                    db.commit()
+
+                    # Fetch current game_ID
+                    cur.execute("SELECT ID FROM Games ORDER BY ID DESC LIMIT 1")
+                    game_id = cur.fetchone()[0]
+
+                    # Write hulls and datapoints to the database
+                    prev = 0
+                    for field_index, field in enumerate(game.fields):
+                        hull = field.hull_to_string
+                        cur.execute("INSERT INTO Hulls (Hull) VALUES ('{}')".format(hull))
+                        hullid = cur.lastrowid
+
+                        for frame_no, dp in enumerate(game.datapoints[prev:]):
+                            if dp.field_index == field_index:
+                                x_pos = dp.pos[0]
+                                y_pos = dp.pos[1]
+                                speed = dp.speed
+                                angle = dp.angle
+                                accuracy = dp.accuracy
+
+                                prev += 1
+
+                                if dp.hit:
+                                    print(prev, dp.hit.to_int(), dp.hit.goal)
+                                    cur.execute(
+                                        "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy,"
+                                        "HitType) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})".format(
+                                            prev, game_id, hullid, x_pos, y_pos, speed, angle, accuracy, dp.hit.to_int()))
+
+                                    db.commit()
+
+                                else:
+                                    cur.execute(
+                                        "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy)"
+                                        "VALUES ({}, {}, {}, {}, {}, {}, {}, {})".format(
+                                            prev, game_id, hullid, x_pos, y_pos, speed, angle, accuracy))
+
+                                    db.commit()
+
+                            else:
+                                break
+
+                    # Set relevant globals to None for next game
+                    video_camera = None
+
+            # If the game is not finished, keep tracking and streaming frames to webpage
+            if ok:
+                track(frame, game, 1)
+
+                # Globals to update m and s for last frame
+                global m
+                global s
+
+                # Calculate current time and yield to webpage
+                seconds = time.time() - game.time
+                m, s = divmod(seconds, 60)
+                h, m = divmod(m, 60)
+
+                yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
+
+        # One more loop after game_running has turned to False to avoid client-side empty scoreboard
+        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
         one_more = False
 
 @app.route('/game_update')

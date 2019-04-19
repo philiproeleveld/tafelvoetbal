@@ -8,14 +8,9 @@
 	margin-top: 100px;
 }
 
-/* Statistics div container */
-#stats-container {
-    padding: 0px;
-}
-
 /* Timer */
 #timer-container {
-    background-color: black''
+    background-color: black
     color: white;
 }
 
@@ -34,7 +29,7 @@
 
 .scoreboard {
     margin-top:20px;
-    width: 70%;
+    width: 40%;
     margin-left: auto;
     margin-right: auto;
     box-shadow: 0 0 20px black;
@@ -88,6 +83,7 @@ html, body {
 
 .login .alert-holder {
     background-color: var(--dp-green);
+    border: solid white 1px;
 }
 
 .login #alert-login {
@@ -156,7 +152,7 @@ html, body {
     border-color: #ffffff;
 }
 
-/* login button and register link  */
+/* login button and link  */
 .login-register {
     margin-top: 20px;
     color: #ffffff;
@@ -205,6 +201,19 @@ html, body {
 }
 
 #leave-register {
+    color: #ffffff;
+}
+
+.score-buttons button{
+    background-color: var(--dp-green);
+}
+
+.score-buttons button:hover {
+    background-color: var(--dp-green);
+    opacity: 0.7;
+}
+
+#scorewhite {
     color: #ffffff;
 }
 
