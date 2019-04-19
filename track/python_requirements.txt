@@ -3,3 +3,5 @@
 numpy>=1.16.2
 opencv-contrib-python>=4.0.0.21
 scipy>=0.14.0
+flask>=1.0.2
+mysql-connector-python>=8.0.13
