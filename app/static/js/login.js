@@ -1,7 +1,7 @@
 //$(document).ready(function(){
 
 //Find the input search box
-//let search = document.getElementsByClassName("form-control")
+let search = document.getElementsByClassName("form-control")
 
 //Find every item inside the dropdown
 let items = document.getElementsByClassName("dropdown-item")
@@ -18,26 +18,47 @@ function buildDropDown(values) {
 }
 
 //Capture the event when user types into the search box
-//window.addEventListener('input', function () {
-//    let found_elements = search[0].value.trim().toLowerCase()
-//    console.log(found_elements)
-//    filter(search[0].value.trim().toLowerCase())
-//})
+window.addEventListener('input', function () {
+    let found_elements = search[0].value.trim().toLowerCase()
+    console.log(found_elements)
+    filter(search[0].value.trim().toLowerCase()) // inputs search letters to filter (i.e. ti)
+})
 
 //For every word entered by the user, check if the symbol starts with that word
 //If it does show the symbol, else hide it
 function filter(word) {
-    let length = items.length
+    let length = items.length // lengte van usernames
     let collection = []
     let hidden = 0
+
+    // Loop over all items in the items array
     for (let i = 0; i < length; i++) {
-    if (items[i].value.toLowerCase().startsWith(word)) {
-        $(items[i]).show()
-    }
-    else {
-        $(items[i]).hide()
-        hidden++
-    }
+        // Show if there is some sort of match
+        if (items[i].value.toLowerCase().startsWith(word)) {
+            let word = items[i].value
+            console.log(word)
+            let selected_values = $('.hidden-form')
+//            console.log()
+            let selected = false
+
+            selected_values.each(function(input_element) {
+                if (input_element.value == word) {
+                    selected = true
+                    console.log(input_element.value)
+                }
+            })
+
+            if (selected == true) {
+                $(items[i]).show()
+            } else {
+                $(items[i]).hide()
+                hidden++
+            }
+        }
+        else {
+            $(items[i]).hide()
+            hidden++
+        }
     }
 
     //If all items are hidden, show the empty view

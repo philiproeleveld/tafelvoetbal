@@ -3,6 +3,10 @@
   --dp-orange: #f58220;
 }
 
+body {
+font-family: 'Roboto', sans-serif;
+}
+
 /* index.html */
 .outer-wrapper {
 	margin-top: 100px;
@@ -47,6 +51,16 @@ html, body {
 
 #video {
     width: 100%;
+}
+
+/* disclaimer */
+.disclaimer {
+    width: 50%;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 100px;
+    border: 3px solid black;
+    text-align: center;
 }
 
 /* login.html */

@@ -14,6 +14,9 @@
     <!-- Latest compiled and minified JavaScript -->
     <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}" ></script>
 
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+
+
 </head>
 
 <body>
@@ -105,12 +108,27 @@
                 {% endif %}
         {% endwith %}
     </div>
-    <!-- -->
+    <!---->
 
 </div>
 <!-- -->
 
+<div class="row disclaimer">
+   <div class = "col-sm-12 disclaimer-message">
+       <h2>Lees a.u.b. voor je eerste spel</h2>
+        <p>
+            Wanneer het spel begint verschijnt er een nieuw scherm met daarin de score, de gespeelde tijd, en drie knoppen. Één van deze
+            knoppen kan gebruikt worden om het laatst gescoorde doelpunt ongedaan te maken, de andere twee knoppen geven je de optie om
+            de score toe te laten nemen wanneer een doelpunt niet goed geregistreerd is door het programma. Wanneer je een
+            doelpunt ongeldig wilt laten verklaren of een niet geregistreerd doelpunt wilt laten meetellen, vragen we je dit zo snel
+            mogelijk te doen nadat betreffende de actie heeft plaatsgevonden. Dit kan enorm helpen in het bouwen van modellen die het
+            bijhouden van de score tijdens het spel zullen doen toenemen.
+        </p>
+   </div>
+</div>
+
 </form>
+
 
 <script>
     let names = {{db_names|safe}}
