@@ -260,8 +260,8 @@ def update_dashboard():
 
     # Start videocapture
     if video_camera == None:
-        video_camera = cv2.VideoCapture(video_file)
-        # video_camera = cv2.VideoCapture(0)
+        # video_camera = cv2.VideoCapture(video_file)
+        video_camera = cv2.VideoCapture(1)
 
     # Keep running until game_running == False
     while one_more:
@@ -284,7 +284,7 @@ def update_dashboard():
                 last_scored = 'black'
 
             # Stop game if there is a score of 10 or higher and there is a difference of 2
-            if game.score[0] >= 3 or game.score[1] >= 3:
+            if game.score[0] >= 10 or game.score[1] >= 10:
                 if abs(game.score[0] - game.score[1]) >= 2:
 
                     # Stop game and yield last frame

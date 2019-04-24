@@ -100,7 +100,7 @@
     }
 
     // Automatically check if the game is finished every second and submit render login form
-    if ((Number(score_white.innerHTML) >= 3) || (Number(score_black.innerHTML) >= 3)){
+    if ((Number(score_white.innerHTML) >= 10) || (Number(score_black.innerHTML) >= 10)){
         console.log(Math.abs(Number(score_white.innerHTML) - Number(score_black.innerHTML)))
         if (Math.abs(Number(score_white.innerHTML) - Number(score_black.innerHTML)) >= 2) {
             $('#stop-game').submit();
