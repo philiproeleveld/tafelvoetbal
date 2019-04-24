@@ -261,7 +261,7 @@ def update_dashboard():
     # Start videocapture
     if video_camera == None:
         # video_camera = cv2.VideoCapture(video_file)
-        video_camera = cv2.VideoCapture(1)
+        video_camera = cv2.VideoCapture(0)
 
     # Keep running until game_running == False
     while one_more:
@@ -276,15 +276,15 @@ def update_dashboard():
 
             # Determine the last scoring team (for score adjustment purposes)
             if game.score[0] > prev_white:
-                prev_white = game.score[1]
+                prev_white = game.score[0]
                 last_scored = 'white'
 
             elif game.score[1] > prev_black:
-                prev_black = game.score[0]
+                prev_black = game.score[1]
                 last_scored = 'black'
 
             # Stop game if there is a score of 10 or higher and there is a difference of 2
-            if game.score[0] >= 10 or game.score[1] >= 10:
+            if game.score[0] >= 3 or game.score[1] >= 3:
                 if abs(game.score[0] - game.score[1]) >= 2:
 
                     # Stop game and yield last frame
@@ -359,10 +359,10 @@ def update_dashboard():
                 m, s = divmod(seconds, 60)
                 h, m = divmod(m, 60)
 
-                yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
+                yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[1], game.score[0]))
 
         # One more loop after game_running has turned to False to avoid client-side empty scoreboard
-        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
+        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[1], game.score[0]))
         one_more = False
 
 @app.route('/game_update')
