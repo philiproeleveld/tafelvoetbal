@@ -1,10 +1,11 @@
 //$(document).ready(function(){
 
 //Find the input search box
-let search = document.getElementsByClassName("form-control")
+//let search = document.getElementById("first")
 
 //Find every item inside the dropdown
-let items = document.getElementsByClassName("dropdown-item")
+//let items = document.getElementsByClassName("dropdown-item")
+
 function buildDropDown(values) {
     let contents = []
     for (let name of values) {
@@ -17,16 +18,16 @@ function buildDropDown(values) {
     $('.empty').hide()
 }
 
-//Capture the event when user types into the search box
-window.addEventListener('input', function () {
-    let found_elements = search[0].value.trim().toLowerCase()
-    console.log(found_elements)
-    filter(search[0].value.trim().toLowerCase()) // inputs search letters to filter (i.e. ti)
+$('.form-control').on('input', function() {
+    console.log($(this).siblings())
+    let dropdown_items = $(this).siblings()[0].children
+    let input_text = $(this)[0].value.trim().toLowerCase()
+    filter(input_text, dropdown_items)
 })
 
 //For every word entered by the user, check if the symbol starts with that word
 //If it does show the symbol, else hide it
-function filter(word) {
+function filter(word, items) {
     let length = items.length // lengte van usernames
     let collection = []
     let hidden = 0
@@ -36,23 +37,23 @@ function filter(word) {
         // Show if there is some sort of match
         if (items[i].value.toLowerCase().startsWith(word)) {
             let word = items[i].value
-            console.log(word)
-            let selected_values = $('.hidden-form')
-//            console.log()
-            let selected = false
 
-            selected_values.each(function(input_element) {
-                if (input_element.value == word) {
+            let selected_values = $('.hidden-form')
+            let selected = false
+//            console.log(selected_values)
+
+            for (let j = 0; j < selected_values.length; j++) {
+                if (selected_values[j].value == word) {
                     selected = true
-                    console.log(input_element.value)
+                    console.log(word)
                 }
-            })
+            }
 
             if (selected == true) {
-                $(items[i]).show()
-            } else {
                 $(items[i]).hide()
                 hidden++
+            } else {
+                $(items[i]).show()
             }
         }
         else {

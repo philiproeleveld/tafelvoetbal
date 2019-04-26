@@ -34,9 +34,7 @@
             <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
             <input type="hidden" class="hidden-form" name="wit_voor" value="Naam"/>
             <div class="dropdown-menu" aria-labelledby="dropdown_coins">
-                <form class="px-4 py-2">
-                    <input type="search" class="form-control" placeholder="Naam" autofocus="autofocus">
-                </form>
+                <input type="search" class="form-control" id="first" placeholder="Naam" autofocus="autofocus">
                 <div class="menuItems" id="wit-voor"></div>
                 <div class="dropdown-header empty">Geen naam gevonden</div>
             </div>
@@ -47,9 +45,7 @@
             <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
             <input type="hidden" class="hidden-form" name="wit_achter" value="Naam"/>
             <div class="dropdown-menu" aria-labelledby="dropdown_coins">
-                <form class="px-4 py-2">
-                    <input type="search" class="form-control " placeholder="Naam" autofocus="autofocus">
-                </form>
+                <input type="search" class="form-control" id="second" placeholder="Naam" autofocus="autofocus">
                 <div class="menuItems" id="wit-achter"></div>
                 <div class="dropdown-header empty">Geen naam gevonden</div>
             </div>
@@ -67,9 +63,7 @@
             <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
             <input type="hidden" class="hidden-form" name="zwart_voor" value="Naam"/>
             <div class="dropdown-menu" aria-labelledby="dropdown_coins">
-                <form class="px-4 py-2">
-                    <input type="search" class="form-control search" placeholder="Naam" autofocus="autofocus">
-                </form>
+                <input type="search" class="form-control" id="third" placeholder="Naam" autofocus="autofocus">
                 <div class="menuItems" id="zwart-voor"></div>
                 <div class="dropdown-header empty">Geen naam gevonden</div>
             </div>
@@ -80,9 +74,7 @@
             <button class="btn btn-secondary dropdown-toggle name-selector" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Naam</button>
             <input type="hidden" class="hidden-form" name="zwart_achter" value="Naam"/>
             <div id="menu" class="dropdown-menu" aria-labelledby="dropdown_coins">
-                <form class="px-4 py-2">
-                    <input type="search" class="form-control search" placeholder="Naam" autofocus="autofocus">
-                </form>
+                <input type="search" class="form-control" id="fourth" placeholder="Naam" autofocus="autofocus">
                 <div class="menuItems" id="zwart-achter"></div>
                 <div class="dropdown-header empty">Geen naam gevonden</div>
             </div>
@@ -96,7 +88,7 @@
         <!---->
 
     </div>
-    <!-- -->
+    <!---->
 
     <!-- Holder for login alerts -->
     <div class="col-sm-12 alert-holder border-top-0">
@@ -121,8 +113,8 @@
             knoppen kan gebruikt worden om het laatst gescoorde doelpunt ongedaan te maken, de andere twee knoppen geven je de optie om
             de score toe te laten nemen wanneer een doelpunt niet goed geregistreerd is door het programma. Wanneer je een
             doelpunt ongeldig wilt laten verklaren of een niet geregistreerd doelpunt wilt laten meetellen, vragen we je dit zo snel
-            mogelijk te doen nadat betreffende de actie heeft plaatsgevonden. Dit kan enorm helpen in het bouwen van modellen die het
-            bijhouden van de score tijdens het spel zullen doen toenemen.
+            mogelijk te doen nadat de betreffende actie heeft plaatsgevonden. Dit kan enorm helpen in het bouwen van modellen die het
+            bijhouden van de score tijdens het spel ten goede zullen komen.
         </p>
    </div>
 </div>
