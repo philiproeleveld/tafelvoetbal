@@ -1,11 +1,5 @@
 //$(document).ready(function(){
 
-//Find the input search box
-//let search = document.getElementById("first")
-
-//Find every item inside the dropdown
-//let items = document.getElementsByClassName("dropdown-item")
-
 function buildDropDown(values) {
     let contents = []
     for (let name of values) {
@@ -40,7 +34,6 @@ function filter(word, items) {
 
             let selected_values = $('.hidden-form')
             let selected = false
-//            console.log(selected_values)
 
             for (let j = 0; j < selected_values.length; j++) {
                 if (selected_values[j].value == word) {

@@ -1,5 +1,7 @@
 import time
 import json
+import MySQLdb
+from datetime import timedelta
 
 # Constants
 team_black = 0
@@ -104,6 +106,10 @@ class game_data:
         self.score = [0, 0]
         self.time = 0 # Time at which the game started
         self.duration = 0
+        self.db = MySQLdb.connect(host="localhost",
+                                 user="root",
+                                 passwd="password",
+                                 db="Tafelvoetbal")
 
     # Start a game by starting the timer, This method is called automatically
     # in the track.track() function when the ball is detected for the first time
@@ -156,3 +162,60 @@ class game_data:
     # Returns true if the score is such that one team should've won already
     def is_done(self):
         return abs(self.score[0] - self.score[1]) >= 2 and (self.score[0] >= 10 or self.score[1] >= 10)
+
+    # Writes game data to SQL database after game is finished
+    def write_db(self, zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID):
+
+        cur = self.db.cursor()
+
+        # Convert start time and duration to right format
+        db_starttime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.time))
+        duration = str(timedelta(seconds=int(self.duration)))
+
+        # Write game data to MySQL database (Table: Games)
+        cur.execute("INSERT INTO Games (PlayerID_Black1, PlayerID_Black2, PlayerID_White1, PlayerID_White2,"
+                    "StartTime, Duration, ScoreWhite, ScoreBlack) VALUES ({}, {}, {}, {}, '{}', '{}', {}, {})".format(
+            zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID, db_starttime, duration, self.score[0], self.score[1]))
+
+        self.db.commit()
+
+        # Fetch current game_ID
+        cur.execute("SELECT ID FROM Games ORDER BY ID DESC LIMIT 1")
+        game_id = cur.fetchone()[0]
+
+        # Write hulls and datapoints to the database
+        prev = 0
+        for field_index, field in enumerate(self.fields):
+            hull = field.hull_to_string
+            cur.execute("INSERT INTO Hulls (Hull) VALUES ('{}')".format(hull))
+            hullid = cur.lastrowid
+
+            for frame_no, dp in enumerate(self.datapoints[prev:]):
+                if dp.field_index == field_index:
+                    x_pos = dp.pos[0]
+                    y_pos = dp.pos[1]
+                    speed = dp.speed
+                    angle = dp.angle
+                    accuracy = dp.accuracy
+
+                    prev += 1
+
+                    if dp.hit:
+                        print(prev, dp.hit.to_int(), dp.hit.goal)
+                        cur.execute(
+                            "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy,"
+                            "HitType) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})".format(
+                                prev, game_id, hullid, x_pos, y_pos, speed, angle, accuracy, dp.hit.to_int()))
+
+                        self.db.commit()
+
+                    else:
+                        cur.execute(
+                            "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy)"
+                            "VALUES ({}, {}, {}, {}, {}, {}, {}, {})".format(
+                                prev, game_id, hullid, x_pos, y_pos, speed, angle, accuracy))
+
+                        self.db.commit()
+
+                else:
+                    break

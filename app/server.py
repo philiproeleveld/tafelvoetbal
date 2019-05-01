@@ -14,7 +14,6 @@ else:
 
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))) + "/track")
 
-from datetime import timedelta
 from track import track
 from game_data import game_data
 
@@ -101,6 +100,8 @@ def handle_register():
         error = 'Vul de verplichte velden in'
     elif db_usernames:
         error = 'Username al in gebruik'
+    elif ' ' in username:
+        error = "Username mag geen spaties bevatten"
     elif age.isdigit() == False:
         error = "Leeftijd dient een getal te zijn"
     elif int(age) > 70:
@@ -184,6 +185,7 @@ def handle_login():
 
        game = game_data()
        game.start()
+
        game_running = True
 
        return render_template('game.html')
@@ -260,8 +262,8 @@ def update_dashboard():
 
     # Start videocapture
     if video_camera == None:
-        # video_camera = cv2.VideoCapture(video_file)
-        video_camera = cv2.VideoCapture(0)
+        video_camera = cv2.VideoCapture(video_file)
+        # video_camera = cv2.VideoCapture(1)
 
     # Keep running until game_running == False
     while one_more:
@@ -291,57 +293,8 @@ def update_dashboard():
                     game.stop()
                     game_running = False
 
-                    # Convert start time and duration to right format
-                    db_starttime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(game.time))
-                    duration = str(timedelta(seconds=int(game.duration)))
-
-                    # Write game data to MySQL database (Table: Games)
-                    cur.execute("INSERT INTO Games (PlayerID_Black1, PlayerID_Black2, PlayerID_White1, PlayerID_White2,"
-                                "StartTime, Duration, ScoreWhite, ScoreBlack) VALUES ({}, {}, {}, {}, '{}', '{}', {}, {})".format(
-                        zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID, db_starttime, duration, game.score[0],
-                        game.score[1]))
-                    db.commit()
-
-                    # Fetch current game_ID
-                    cur.execute("SELECT ID FROM Games ORDER BY ID DESC LIMIT 1")
-                    game_id = cur.fetchone()[0]
-
-                    # Write hulls and datapoints to the database
-                    prev = 0
-                    for field_index, field in enumerate(game.fields):
-                        hull = field.hull_to_string
-                        cur.execute("INSERT INTO Hulls (Hull) VALUES ('{}')".format(hull))
-                        hullid = cur.lastrowid
-
-                        for frame_no, dp in enumerate(game.datapoints[prev:]):
-                            if dp.field_index == field_index:
-                                x_pos = dp.pos[0]
-                                y_pos = dp.pos[1]
-                                speed = dp.speed
-                                angle = dp.angle
-                                accuracy = dp.accuracy
-
-                                prev += 1
-
-                                if dp.hit:
-                                    print(prev, dp.hit.to_int(), dp.hit.goal)
-                                    cur.execute(
-                                        "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy,"
-                                        "HitType) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})".format(
-                                            prev, game_id, hullid, x_pos, y_pos, speed, angle, accuracy, dp.hit.to_int()))
-
-                                    db.commit()
-
-                                else:
-                                    cur.execute(
-                                        "INSERT INTO Datapoints (FrameNumber, GameID, HullID, XCoord, YCoord, Speed, Angle, Accuracy)"
-                                        "VALUES ({}, {}, {}, {}, {}, {}, {}, {})".format(
-                                            prev, game_id, hullid, x_pos, y_pos, speed, angle, accuracy))
-
-                                    db.commit()
-
-                            else:
-                                break
+                    # Write game data to MySQL database
+                    game.write_db(zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID)
 
                     # Set relevant globals to None for next game
                     video_camera = None
@@ -359,10 +312,10 @@ def update_dashboard():
                 m, s = divmod(seconds, 60)
                 h, m = divmod(m, 60)
 
-                yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[1], game.score[0]))
+                yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
 
         # One more loop after game_running has turned to False to avoid client-side empty scoreboard
-        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[1], game.score[0]))
+        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
         one_more = False
 
 @app.route('/game_update')

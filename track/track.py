@@ -163,7 +163,7 @@ def track(frame, game, scaledown, hit_detection=None):
             # Compare speed only to the first previously known speed
             comparison_speed = game.last_seen().speed
             # Threshold for speed-based hit detection is depends on current speed
-            speed_thresh = 100 / (1 +  10 * accuracy ** 2 / 2 ** (comparison_speed / 25))
+            speed_thresh = 100 / (1 + 10 * accuracy ** 2 / 2 ** (comparison_speed / 25))
 
             # Compare angle to average of all previous angles up to the last hit
             angles = []
