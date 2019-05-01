@@ -6,6 +6,7 @@ import cmath
 from scipy.spatial import Delaunay
 from argparse import ArgumentParser
 import game_data
+import time
 
 # BGR colors
 black        = (  0,   0,   0)
@@ -293,8 +294,6 @@ def track(frame, game, scaledown, hit_detection=None):
 
     return game
 
-
-
 def main(**kwargs):
     """
     Read the video source frame by frame, tracking the ball and displaying
@@ -336,6 +335,9 @@ def main(**kwargs):
 
     wait            (integer)   1
         specify how long to wait on each frame (in ms)
+
+    hit_labeling    (boolean)   False
+        enable manual hit labeling if true
     """
     # Unpack kwargs
     source = kwargs['source'] if 'source' in kwargs and kwargs['source'] else None
@@ -350,6 +352,7 @@ def main(**kwargs):
     draw_hit_detection = kwargs['hit_detection'] if 'hit_detection' in kwargs else False
     draw_heatmap = kwargs['heatmap'] if 'heatmap' in kwargs else False
     wait = kwargs['wait'] if 'wait' in kwargs else 1
+    hit_labeling = kwargs['hit_labeling'] if 'hit_labeling' in kwargs else False
 
     # Load video
     if source:
@@ -363,6 +366,10 @@ def main(**kwargs):
     ok, frame = vid.read()
     if not ok:
         sys.exit(1)
+
+    if hit_labeling:
+        if hit_labeling:
+            prev_hit = 0
 
     # Constants based on resolution
     res = (frame.shape[1], frame.shape[0])
@@ -426,6 +433,7 @@ def main(**kwargs):
                     cv2.circle(temp, game.datapoints[i].pos, ballradius // 2, color, -1)
                     alpha = 0.5
                     cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
+
                 if draw_history:
                     if game.datapoints[i-1]:
                         cv2.line(frame, game.datapoints[i-1].pos, game.datapoints[i].pos, pink, draw_thickness)
@@ -454,15 +462,40 @@ def main(**kwargs):
                 cv2.putText(frame, "Speed: " + str(int(game.last_seen().speed)) + " pix/frame", (int(3 * scale), int(res[1] - 34 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
                 cv2.putText(frame, "Angle: " + str(int(game.last_seen().angle)) + " deg", (int(3 * scale), int(res[1] - 8 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale / 2, black, draw_thickness)
 
+        # Draws the last detected hit green to be labeled by the labeler for machine learning purposes
+        if hit_labeling:
+            new_hit_idx = None
+            for i in reversed(range(len(game.datapoints))):
+                if i == prev_hit:
+                    break
+                if game.datapoints[i].hit:
+                    temp = frame.copy()
+                    cv2.circle(temp, game.datapoints[i].pos, ballradius // 2, green, -1)
+                    alpha = 0.5
+                    cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
+                    prev_hit, new_hit_idx = i, i
+                    break
+
+
         # Fullscreen
         cv2.namedWindow("Tracking", cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty("Tracking", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        # cv2.setWindowProperty("Tracking", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         # Display
         cv2.imshow("Tracking", frame)
+
         if cv2.waitKey(wait) & 0xFF == ord('q'):
             if wait > 0:
                 break
 
+        # Hit labeling
+        if hit_labeling and new_hit_idx:
+            hit_check = input("Approve hit? Type 'y', else type enter")
+
+            # Undo hit by setting last found hit to None
+            if hit_check != 'y':
+                game.datapoints[new_hit_idx].hit = None
+
+    game.write_db(1, 2, 3, 4)
     game.stop()
     cv2.destroyAllWindows()
 
@@ -520,6 +553,7 @@ if __name__ == '__main__':
     parser.add_argument("--hit-detection", action="store_true", help="turn on hit detection visualization")
     parser.add_argument("--heatmap", action="store_true", help="show a heatmap after the video is done")
     parser.add_argument("--wait", type=int, default=1, metavar="N", help="specify how long to wait on each frame")
+    parser.add_argument("--hit_labeling", action="store_true", help="turn on the hit labeling option")
     args = parser.parse_args()
 
     main(**vars(args))

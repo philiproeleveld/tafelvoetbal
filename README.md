@@ -87,6 +87,9 @@ A complete list of optional flags is as follows:
 - `--scaledown N`  
     Specify how much to scale down footage before doing calculations. Recommended for footage of more than 1 megapixel. (Default: 1, i.e. no scaledown)
 
+- `--hit_labeling`  
+    Enables manual labeling of detected hits. After each hit, labeler can decide to not approve the hit. Don't use with `--hit-detections`.
+
 #### server.py
 This script launches the Flask web-application. To launch the application, run `python server.py` in a terminal.
 

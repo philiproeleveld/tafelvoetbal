@@ -186,7 +186,7 @@ class game_data:
         # Write hulls and datapoints to the database
         prev = 0
         for field_index, field in enumerate(self.fields):
-            hull = field.hull_to_string
+            hull = field.hull_to_string()
             cur.execute("INSERT INTO Hulls (Hull) VALUES ('{}')".format(hull))
             hullid = cur.lastrowid
 
