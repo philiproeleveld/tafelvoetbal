@@ -49,3 +49,16 @@ create table if not exists Datapoints (
     foreign key (GameID) references Games(ID),
     foreign key (HullID) references Hulls(ID)
 );
+
+create table if not exists DatapointsML (
+	GameID int not null,
+    FrameNumber int not null,
+    XCoord smallint,
+    YCoord smallint,
+    Speed float(53),
+    Angle decimal(19,16),
+    Accuracy decimal(19,18),
+    HitType smallint default 0,
+    SpeedHit boolean,
+    AngleHit boolean
+);

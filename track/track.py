@@ -54,8 +54,6 @@ def calc_angle(point1, point2):
 def mean_angle(angles):
     return math.degrees(cmath.phase(sum(cmath.rect(1, math.radians(angle)) for angle in angles)/len(angles))) % 360
 
-
-
 def track(frame, game, scaledown, hit_detection=None):
     """
     Functional tracking code: Find the ball in the frame, storing relevant data
@@ -163,7 +161,7 @@ def track(frame, game, scaledown, hit_detection=None):
             # Determine hits
             # Compare speed only to the first previously known speed
             comparison_speed = game.last_seen().speed
-            # Threshold for speed-based hit detection is depends on current speed
+            # Threshold for speed-based hit detection depends on current speed
             speed_thresh = 100 / (1 + 10 * accuracy ** 2 / 2 ** (comparison_speed / 25))
 
             # Compare angle to average of all previous angles up to the last hit
@@ -367,9 +365,9 @@ def main(**kwargs):
     if not ok:
         sys.exit(1)
 
+    # Keeps track of previous hit in datapoints list for labeling purposes
     if hit_labeling:
-        if hit_labeling:
-            prev_hit = 0
+        prev_hit = 0
 
     # Constants based on resolution
     res = (frame.shape[1], frame.shape[0])
@@ -383,6 +381,7 @@ def main(**kwargs):
 
     # Loop over all frames
     while True:
+
         ok, frame = vid.read()
         if not ok:
             break
@@ -470,7 +469,13 @@ def main(**kwargs):
                     break
                 if game.datapoints[i].hit:
                     temp = frame.copy()
-                    cv2.circle(temp, game.datapoints[i].pos, ballradius // 2, green, -1)
+                    if game.datapoints[i].hit.team == game_data.team_black:
+                        color = black
+                    elif game.datapoints[i].hit.team == game_data.team_white:
+                        color = white
+                    else:
+                        color = red
+                    cv2.circle(temp, game.datapoints[i].pos, ballradius // 2, color, -1)
                     alpha = 0.5
                     cv2.addWeighted(temp, alpha, frame, 1 - alpha, 0, frame)
                     prev_hit, new_hit_idx = i, i
@@ -489,15 +494,20 @@ def main(**kwargs):
 
         # Hit labeling
         if hit_labeling and new_hit_idx:
-            hit_check = input("Approve hit? Type 'y', else type enter")
+            speedo = game.datapoints[new_hit_idx].hit.type[0]
+            angleo = game.datapoints[new_hit_idx].hit.type[1]
+            hit_check = input("Approve hit ({}, {})? Press enter, else type n: ".format(speedo, angleo))
 
             # Undo hit by setting last found hit to None
-            if hit_check != 'y':
+            if hit_check != 'n':
                 game.datapoints[new_hit_idx].hit = None
 
-    game.write_db(1, 2, 3, 4)
     game.stop()
     cv2.destroyAllWindows()
+
+    # Write labeled game to database if we are doing labeling
+    if hit_labeling:
+        game.write_ML_db()
 
     # Draw "heatmap" on the first frame
     if draw_heatmap:

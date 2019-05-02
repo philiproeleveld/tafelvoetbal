@@ -25,7 +25,7 @@ class field_data:
 
     # Returns a JSON formatted string
     def hull_to_string(self):
-        return json.dumps(self.hull.tolist())
+        return json.dumps(self.hull)
 
 # Hit class to store data about single hits
 class hit:
@@ -175,7 +175,7 @@ class game_data:
         # Write game data to MySQL database (Table: Games)
         cur.execute("INSERT INTO Games (PlayerID_Black1, PlayerID_Black2, PlayerID_White1, PlayerID_White2,"
                     "StartTime, Duration, ScoreWhite, ScoreBlack) VALUES ({}, {}, {}, {}, '{}', '{}', {}, {})".format(
-            zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID, db_starttime, duration, self.score[0], self.score[1]))
+            zwartachter_ID, zwartvoor_ID, witachter_ID, witvoor_ID, db_starttime, duration, self.score[1], self.score[0]))
 
         self.db.commit()
 
@@ -186,7 +186,7 @@ class game_data:
         # Write hulls and datapoints to the database
         prev = 0
         for field_index, field in enumerate(self.fields):
-            hull = field.hull_to_string()
+            hull = field.hull_to_string
             cur.execute("INSERT INTO Hulls (Hull) VALUES ('{}')".format(hull))
             hullid = cur.lastrowid
 
@@ -219,3 +219,36 @@ class game_data:
 
                 else:
                     break
+
+    # Used to write data to machine learning table (after labeling)
+    def write_ML_db(self):
+        cur = self.db.cursor()
+
+        for frame_no, dp in enumerate(self.datapoints):
+            x_pos = dp.pos[0]
+            y_pos = dp.pos[1]
+            speed = dp.speed
+            angle = dp.angle
+            accuracy = dp.accuracy
+
+            if cur.lastrowid:
+                game_id = cur.lastrowid + 1
+            else:
+                game_id = 0
+
+            if dp.hit:
+                speedhit = dp.hit.type[0]
+                anglehit = dp.hit.type[1]
+                cur.execute(
+                    "INSERT INTO DatapointsML (GameID, FrameNumber, XCoord, YCoord, Speed, Angle, Accuracy,"
+                    "HitType, SpeedHit, AngleHit) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})".format(
+                        game_id, frame_no, x_pos, y_pos, speed, angle, accuracy, dp.hit.to_int(), speedhit, anglehit))
+
+                self.db.commit()
+
+            else:
+                cur.execute(
+                    "INSERT INTO DatapointsML (GameID, FrameNumber, XCoord, YCoord, Speed, Angle, Accuracy) VALUES ({}, {}, {}, {}, {}, {}, {})".format(
+                        game_id, frame_no, x_pos, y_pos, speed, angle, accuracy))
+
+                self.db.commit()

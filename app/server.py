@@ -10,7 +10,7 @@ if repo.find('/') == -1:
     video_file = repo + "\\data\\game.mp4"
 else:
     track_dir = repo + "/track"
-    video_file = repo + "/data/game.mp4"
+    video_file = repo + "/data/game2.mov"
 
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))) + "/track")
 
@@ -217,20 +217,20 @@ def adjust_score():
                 if increase == 'increase_white':
                     if dp.hit.team == 1: # White hit
                         game.datapoints[idx].hit.goal = 0
-                        game.score[0] += 1
+                        game.score[1] += 1
                         break
 
                 elif increase == 'increase_black':
                     if dp.hit.team == 0: # Black hit
                         game.datapoints[idx].hit.goal = 1
-                        game.score[1] += 1
+                        game.score[0] += 1
                         break
 
     else:
         if last_scored == 'white':
-            game.score[0] -= 1
-        elif last_scored == 'black':
             game.score[1] -= 1
+        elif last_scored == 'black':
+            game.score[0] -= 1
 
         # Find the last hit in datapoints list and set self.goal to None for this datapoint
         for idx, dp in reversed(list(enumerate(game.datapoints))):
@@ -262,8 +262,8 @@ def update_dashboard():
 
     # Start videocapture
     if video_camera == None:
-        video_camera = cv2.VideoCapture(video_file)
-        # video_camera = cv2.VideoCapture(1)
+        # video_camera = cv2.VideoCapture(video_file)
+        video_camera = cv2.VideoCapture(1)
 
     # Keep running until game_running == False
     while one_more:
@@ -277,16 +277,16 @@ def update_dashboard():
             # game.score[1] += score_white[0]
 
             # Determine the last scoring team (for score adjustment purposes)
-            if game.score[0] > prev_white:
-                prev_white = game.score[0]
+            if game.score[1] > prev_white:
+                prev_white = game.score[1]
                 last_scored = 'white'
 
-            elif game.score[1] > prev_black:
-                prev_black = game.score[1]
+            elif game.score[0] > prev_black:
+                prev_black = game.score[0]
                 last_scored = 'black'
 
             # Stop game if there is a score of 10 or higher and there is a difference of 2
-            if game.score[0] >= 3 or game.score[1] >= 3:
+            if game.score[0] >= 10 or game.score[1] >= 10:
                 if abs(game.score[0] - game.score[1]) >= 2:
 
                     # Stop game and yield last frame
@@ -301,7 +301,7 @@ def update_dashboard():
 
             # If the game is not finished, keep tracking and streaming frames to webpage
             if ok:
-                track(frame, game, 1)
+                track(frame, game, 2)
 
                 # Globals to update m and s for last frame
                 global m
@@ -312,10 +312,10 @@ def update_dashboard():
                 m, s = divmod(seconds, 60)
                 h, m = divmod(m, 60)
 
-                yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
+                yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[1], game.score[0]))
 
         # One more loop after game_running has turned to False to avoid client-side empty scoreboard
-        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[0], game.score[1]))
+        yield ('{:.0f}m{:.0f}s {} {}\n'.format(m, s, game.score[1], game.score[0]))
         one_more = False
 
 @app.route('/game_update')
