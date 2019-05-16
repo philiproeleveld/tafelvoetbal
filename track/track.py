@@ -4,6 +4,7 @@ import numpy as np
 import math
 import cmath
 from scipy.spatial import Delaunay
+from scipy.signal import find_peaks, savgol_filter
 from argparse import ArgumentParser
 import game_data
 import time
@@ -17,6 +18,8 @@ cyan         = (255, 255,   0)
 pink         = (255,   0, 255)
 yellow       = (  0, 255, 255)
 white        = (255, 255, 255)
+black_player = (14,  16,   13)
+white_player = (190, 182, 182)
 # HSV colors
 lower_yellow = ( 20, 120, 120)
 upper_yellow = ( 35, 255, 255)
@@ -53,6 +56,77 @@ def calc_angle(point1, point2):
 # See https://rosettacode.org/wiki/Averages/Mean_angle for an explanation
 def mean_angle(angles):
     return math.degrees(cmath.phase(sum(cmath.rect(1, math.radians(angle)) for angle in angles)/len(angles))) % 360
+
+# Finds edges in sliced image
+def find_edges(sliced_img):
+    # Grayscale and blur
+    gray = cv2.cvtColor(sliced_img, cv2.COLOR_BGR2GRAY)
+    kernel_size = 5
+    blurred_image = cv2.GaussianBlur(gray, (kernel_size, kernel_size), 0)
+
+    # Edges
+    low_threshold = 50
+    high_threshold = 150
+    edges = cv2.Canny(blurred_image, low_threshold, high_threshold, 2)
+
+    return edges
+
+# Find the x-coordinate of a bar within sliced image
+def find_bar(edge_img):
+    # Get HoughLines from edge image
+    lines = cv2.HoughLines(edge_img, 1, np.pi / 180, 200)
+
+    # Loop over all lines from most confident to least confident
+    for line in lines:
+        for rho, theta in line:
+            a = np.cos(theta)
+            b = np.sin(theta)
+            x0 = a * rho
+
+            x1 = int(x0 + 1000 * (-b))
+            x2 = int(x0 - 1000 * (-b))
+
+            # Only consider perfect vertical lines for bar detection
+            if abs(x1 - x2) <= 50:
+                return x1
+
+
+# Calculates mean color distances for all rows in a sliced image
+def color_distance(distance_img, player_color):
+    distance_list = np.array([np.mean(
+        [np.sqrt((col[0] - player_color[0]) ** 2 + (col[1] - player_color[1]) ** 2 + (col[2] - player_color[2]) ** 2)
+         for col in row]) for row in distance_img])
+
+    return distance_list
+
+# Determines the player y-positions within a sliced image
+def calculate_players(distance_list, k):
+    # Smooth distance list dat
+    smoothed = list(savgol_filter(distance_list, 45, 1))
+    smoothed_reverse = [max(smoothed) - i for i in smoothed]
+
+    # Find most prominent local minima in the smoothed color distance graph
+    peaks, _ = find_peaks(smoothed_reverse, prominence=.5)
+    peaks = list(peaks)
+
+    minima_idx_list = []
+    # Select number of minima peaks equal to k that have lowest value
+    for i in range(k):
+        minimum = 1e4
+
+        for peak_idx in peaks:
+            peak_value = smoothed[peak_idx]
+            too_close = sum([0 if taken_min < peak_idx - 100 or taken_min > peak_idx + 100 else 1 for taken_min in
+                 minima_idx_list])
+
+            if peak_value < minimum and not too_close:
+                minimum = peak_value
+                new_peak_idx = peak_idx
+
+        peaks.remove(new_peak_idx)
+        minima_idx_list.append(new_peak_idx)
+
+    return np.array(minima_idx_list)
 
 def track(frame, game, scaledown, hit_detection=None):
     """
@@ -175,6 +249,7 @@ def track(frame, game, scaledown, hit_detection=None):
                 comparison_angle = mean_angle(angles)
             else:
                 comparison_angle = game.last_seen().angle
+
             # Threshold for angle-based hit detection is determined by speed
             angle_thresh = min(90, 450 / ((comparison_speed * accuracy) ** 0.7 + 3))
 
@@ -190,6 +265,7 @@ def track(frame, game, scaledown, hit_detection=None):
             angle_hit = (comparison_angle - angle) % 360 > angle_thresh and (angle - comparison_angle) % 360 > angle_thresh
 
             if speed_hit or angle_hit:
+
                 # Outside of green area, assume a side was hit
                 if Delaunay(field.hull).find_simplex(game.last_seen().pos) < 0:
                     new_hit = game_data.hit((speed_hit, angle_hit))
@@ -199,32 +275,82 @@ def track(frame, game, scaledown, hit_detection=None):
                     if last_xpos < field.regions[0]:
                         team = game_data.team_black
                         player = game_data.keeper
+                        x_left, x_right = 0, field.regions[0]
+                        num_players = 1
                     elif last_xpos < field.regions[1]:
                         team = game_data.team_black
                         player = game_data.defense
+                        x_left, x_right = field.regions[0], field.regions[1]
+                        num_players = 2
                     elif last_xpos < field.regions[2]:
                         team = game_data.team_white
                         player = game_data.offense
+                        x_left, x_right = field.regions[1], field.regions[2]
+                        num_players = 3
                     elif last_xpos < field.regions[3]:
                         team = game_data.team_black
                         player = game_data.midfield
+                        x_left, x_right = field.regions[2], field.regions[3]
+                        num_players = 5
                     elif last_xpos < field.regions[4]:
                         team = game_data.team_white
                         player = game_data.midfield
+                        x_left, x_right = field.regions[3], field.regions[4]
+                        num_players = 5
                     elif last_xpos < field.regions[5]:
                         team = game_data.team_black
                         player = game_data.offense
+                        x_left, x_right = field.regions[4], field.regions[5]
+                        num_players = 3
                     elif last_xpos < field.regions[6]:
                         team = game_data.team_white
                         player = game_data.defense
+                        x_left, x_right = field.regions[5], field.regions[6]
+                        num_players = 2
                     else:
                         team = game_data.team_white
                         player = game_data.keeper
+                        x_left, x_right = field.regions[6], res[0]
+                        num_players = 1
+
+                    try:
+                        # Approving hit detection by checking if a player is nearby
+                        # First find slice that ball is in and detect edges for this slice
+                        sliced_img = frame[:, x_left:x_right]
+                        edges = find_edges(sliced_img)
+
+                        # Determine bar location and player locations within sliced image
+                        sliced_bar_location = find_bar(edges)
+                        bar_location = (x_left + sliced_bar_location) // scaledown
+                        slice_boundary = [sliced_bar_location - 10, sliced_bar_location + 10]
+                        distance_img = sliced_img[:, slice_boundary[0]:slice_boundary[1]]
+
+                        if team:
+                            distance_list = color_distance(distance_img, white_player)
+                        else:
+                            distance_list = color_distance(distance_img, black_player)
+
+                        player_ycoords = calculate_players(distance_list, num_players)
+                        player_ycoords = player_ycoords // scaledown
+
+                        # Draw
+                        cross_length = 30//scaledown
+
+                        cv2.line(frame, (bar_location, 0), (bar_location, 1200), (255, 0, 0), 3)
+                        for y_idx in player_ycoords:
+                            cv2.line(frame, (bar_location - cross_length, y_idx),
+                                     (bar_location + cross_length, y_idx), (0, 255, 255), 3)
+                            cv2.line(frame, (bar_location, y_idx - cross_length),
+                                     (bar_location, y_idx + cross_length), (0, 255, 255), 3)
+                    except:
+                        print('couldnt find')
+
                     new_hit = game_data.hit((speed_hit, angle_hit), team=team, player=player)
                 game.last_seen().hit = new_hit
 
         game.datapoints[-1].set_data(ballcenter, speed, angle, accuracy, game.field_index())
         game.new_dp()
+
     # Couldn't find ball
     else:
         game.datapoints[-1].hidden += 1
@@ -496,18 +622,20 @@ def main(**kwargs):
         if hit_labeling and new_hit_idx:
             speedo = game.datapoints[new_hit_idx].hit.type[0]
             angleo = game.datapoints[new_hit_idx].hit.type[1]
+
             hit_check = input("Approve hit ({}, {})? Press enter, else type n: ".format(speedo, angleo))
+            print('\n')
 
             # Undo hit by setting last found hit to None
-            if hit_check != 'n':
+            if hit_check == 'n':
                 game.datapoints[new_hit_idx].hit = None
 
     game.stop()
     cv2.destroyAllWindows()
 
     # Write labeled game to database if we are doing labeling
-    if hit_labeling:
-        game.write_ML_db()
+    # if hit_labeling:
+    game.write_ML_db()
 
     # Draw "heatmap" on the first frame
     if draw_heatmap:
@@ -545,8 +673,6 @@ def main(**kwargs):
         cv2.imshow("Heatmap", heatmap)
         if cv2.waitKey(0) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
-
-
 
 if __name__ == '__main__':
     # Configure ArgumentParser

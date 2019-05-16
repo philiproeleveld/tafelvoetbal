@@ -10,7 +10,7 @@ if repo.find('/') == -1:
     video_file = repo + "\\data\\game.mp4"
 else:
     track_dir = repo + "/track"
-    video_file = repo + "/data/game2.mov"
+    video_file = repo + "/track/game.mp4"
 
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))) + "/track")
 
@@ -262,14 +262,15 @@ def update_dashboard():
 
     # Start videocapture
     if video_camera == None:
-        # video_camera = cv2.VideoCapture(video_file)
-        video_camera = cv2.VideoCapture(1)
+        video_camera = cv2.VideoCapture(video_file)
+        # video_camera = cv2.VideoCapture(0)
 
     # Keep running until game_running == False
     while one_more:
         time.sleep(1)
         while game_running:
             ok, frame = video_camera.read()
+            print(ok)
 
             # Mock scoring update, uncomment when using video file for testing purposes
             # score_black, score_white = np.random.choice([0, 1], 1, p=[0.99, 0.01]), np.random.choice([0, 1], 1, p=[0.99, 0.01])
